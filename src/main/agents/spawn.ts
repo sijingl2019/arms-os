@@ -76,6 +76,7 @@ export const nodeSpawner: Spawner = (req: SpawnRequest, cb: SpawnCallbacks): Pro
   try {
     child = spawn(command, args, {
       cwd: req.cwd,
+      ...(req.env ? { env: { ...process.env, ...req.env } } : {}),
       shell: IS_WINDOWS,
       // Own process group on POSIX so killTree can reach grandchildren.
       detached: !IS_WINDOWS,

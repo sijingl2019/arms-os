@@ -80,6 +80,56 @@ const MIGRATIONS: Array<(db: Database) => void> = [
       ALTER TABLE runs ADD COLUMN routine_id TEXT;
       CREATE INDEX idx_runs_routine ON runs (routine_id, started_at DESC);
     `)
+  },
+
+  function v3(db) {
+    db.exec(`
+      -- Every tool call through the Gateway, decided or not.
+      --
+      -- 设计文档 §7 folds Gateway calls into the runs table. They are kept
+      -- apart here because the two have almost no columns in common: a run has
+      -- a command line, an exit code and streamed output; a tool call has a
+      -- connector, a JSON argument object and a risk decision. Merging them
+      -- would mean a table that is half NULL whichever kind of row you look at.
+      CREATE TABLE tool_calls (
+        call_id         TEXT PRIMARY KEY,
+        connector_id    TEXT NOT NULL,
+        tool_name       TEXT NOT NULL,
+        qualified_name  TEXT NOT NULL,
+        args            TEXT NOT NULL DEFAULT '{}',
+        risk            TEXT NOT NULL,
+        outcome         TEXT NOT NULL,
+        confirmation_id TEXT,
+        run_id          TEXT,
+        session_id      TEXT,
+        started_at      TEXT NOT NULL,
+        ended_at        TEXT,
+        duration_ms     INTEGER,
+        result          TEXT,
+        error           TEXT
+      );
+
+      CREATE INDEX idx_tool_calls_started ON tool_calls (started_at DESC);
+      CREATE INDEX idx_tool_calls_connector ON tool_calls (connector_id, started_at DESC);
+
+      -- The approval queue behind a write-irreversible action (§2.3).
+      CREATE TABLE confirmations (
+        confirmation_id TEXT PRIMARY KEY,
+        connector_id    TEXT NOT NULL,
+        tool_name       TEXT NOT NULL,
+        qualified_name  TEXT NOT NULL,
+        args            TEXT NOT NULL DEFAULT '{}',
+        risk            TEXT NOT NULL,
+        run_id          TEXT,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        reason          TEXT,
+        requested_at    TEXT NOT NULL,
+        expires_at      TEXT NOT NULL,
+        decided_at      TEXT
+      );
+
+      CREATE INDEX idx_confirmations_status ON confirmations (status, requested_at DESC);
+    `)
   }
 ]
 

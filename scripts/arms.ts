@@ -459,7 +459,7 @@ async function main(): Promise<number> {
         return 2
     }
   } finally {
-    core.close()
+    await core.close()
   }
 }
 

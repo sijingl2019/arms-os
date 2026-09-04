@@ -130,6 +130,9 @@ export interface ArmsEvents {
     endedAt: string
   }
   'skills:index:updated': RefreshResult
+  'gateway:confirmation:pending': PendingConfirmation
+  'gateway:confirmation:decided': { confirmationId: string; status: ConfirmationStatus }
+  'gateway:tool:called': ToolCallRecord
 }
 
 /* --------------------------------------------------------------- routines */
@@ -261,4 +264,79 @@ export interface ArmsOsBridge {
     skillsIndexed(cb: (e: ArmsEvents['skills:index:updated']) => void): () => void
     routinesUpdated(cb: (e: ArmsEvents['routines:updated']) => void): () => void
   }
+}
+
+/* --------------------------------------------------------------- gateway */
+
+export type RiskLevel = 'read-only' | 'write-reversible' | 'write-irreversible'
+
+export type ConfirmationStatus = 'pending' | 'approved' | 'rejected' | 'expired'
+
+export interface PendingConfirmation {
+  confirmationId: string
+  connectorId: string
+  toolName: string
+  qualifiedName: string
+  /** Shown to the human verbatim - this is what they are approving. */
+  args: Record<string, unknown>
+  risk: RiskLevel
+  runId: string | null
+  status: ConfirmationStatus
+  reason: string | null
+  requestedAt: string
+  expiresAt: string
+  decidedAt: string | null
+}
+
+/** How a tool call ended, from the Gateway's point of view. */
+export type ToolCallOutcome =
+  | 'succeeded'
+  | 'failed'
+  | 'denied'
+  | 'expired'
+  | 'blocked'
+  | 'timeout'
+
+export interface ToolCallRecord {
+  callId: string
+  connectorId: string
+  toolName: string
+  qualifiedName: string
+  args: Record<string, unknown>
+  risk: RiskLevel
+  outcome: ToolCallOutcome
+  confirmationId: string | null
+  runId: string | null
+  sessionId: string | null
+  startedAt: string
+  endedAt: string | null
+  durationMs: number | null
+  result: string | null
+  error: string | null
+}
+
+export interface GatewayToolInfo {
+  connectorId: string
+  toolName: string
+  qualifiedName: string
+  description: string
+  risk: RiskLevel
+}
+
+export interface GatewayStatus {
+  running: boolean
+  /** http://127.0.0.1:<port>/mcp, or null when the server is not listening. */
+  endpoint: string | null
+  manifestPath: string
+  connectors: Array<{
+    id: string
+    transport: string
+    enabled: boolean
+    toolCount: number
+    error: string | null
+  }>
+  tools: GatewayToolInfo[]
+  issues: string[]
+  vault: { kind: string; available: boolean }
+  pendingConfirmations: number
 }

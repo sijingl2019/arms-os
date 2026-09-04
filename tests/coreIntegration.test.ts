@@ -39,8 +39,8 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => {
-  core.close()
+afterEach(async () => {
+  await core.close()
   rmSync(dir, { recursive: true, force: true })
 })
 

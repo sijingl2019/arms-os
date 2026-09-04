@@ -2,12 +2,14 @@ import { ArmsBus } from './bus'
 import { loadConfig, type ArmsConfig, type ConfigOverrides } from './config'
 import { openDb, type Db } from './db'
 import { SkillExecutor } from './executor'
+import { ConnectorGateway } from './gateway'
+import type { CredentialVault } from './gateway/vault'
 import { RoutineScheduler } from './routines/scheduler'
 import { RoutineStore } from './routines/store'
 import { RunStore } from './runs/store'
 import { SkillRegistry } from './skills/registry'
 import type { Spawner } from './agents/types'
-import type { RoutineStartupReport } from '@shared/types'
+import type { GatewayStatus, RoutineStartupReport } from '@shared/types'
 
 export interface ArmsCore {
   config: ArmsConfig
@@ -17,6 +19,7 @@ export interface ArmsCore {
   runs: RunStore
   routines: RoutineStore
   scheduler: RoutineScheduler
+  gateway: ConnectorGateway
   executor: SkillExecutor
   /** Number of runs reconciled from a previous session. */
   interrupted: number
@@ -27,7 +30,13 @@ export interface ArmsCore {
    * the graph without a scheduler suddenly firing routines behind it.
    */
   startScheduler(now?: Date): RoutineStartupReport
-  close(): void
+  /**
+   * Bind the loopback MCP endpoint. Separate from `createCore` so a one-shot
+   * CLI command can inspect the graph without opening a port.
+   */
+  startGateway(): Promise<{ endpoint: string; expired: number; issues: string[] }>
+  gatewayStatus(): GatewayStatus
+  close(): Promise<void>
 }
 
 export interface CreateCoreOptions extends ConfigOverrides {
@@ -36,6 +45,9 @@ export interface CreateCoreOptions extends ConfigOverrides {
   tickMs?: number
   /** Overridden in tests so scheduling is not driven by the wall clock. */
   clock?: () => Date
+  /** Defaults to the refusing vault, which is the right answer outside Electron. */
+  vault?: CredentialVault
+  gatewayPort?: number
 }
 
 /**
@@ -46,6 +58,8 @@ export function createCore({
   spawner,
   tickMs,
   clock,
+  vault,
+  gatewayPort,
   ...overrides
 }: CreateCoreOptions = {}): ArmsCore {
   const config = loadConfig(overrides)
@@ -73,6 +87,15 @@ export function createCore({
     ...(clock === undefined ? {} : { clock })
   })
 
+  const gateway = new ConnectorGateway({
+    db,
+    bus,
+    config,
+    ...(vault ? { vault } : {}),
+    ...(spawner ? { spawner } : {}),
+    ...(gatewayPort === undefined ? {} : { port: gatewayPort })
+  })
+
   const interrupted = executor.reconcile()
   executor.start()
 
@@ -84,6 +107,7 @@ export function createCore({
     runs,
     routines,
     scheduler,
+    gateway,
     executor,
     interrupted,
     schedulerReport: null,
@@ -92,9 +116,12 @@ export function createCore({
       core.schedulerReport = report
       return report
     },
-    close: () => {
+    startGateway: () => gateway.start(),
+    gatewayStatus: () => gateway.status(),
+    close: async () => {
       scheduler.stop()
       executor.stop()
+      await gateway.stop()
       bus.removeAll()
       db.close()
     }

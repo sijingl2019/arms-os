@@ -46,6 +46,11 @@ export interface SpawnCallbacks {
 export interface SpawnRequest extends CommandLine {
   cwd: string
   timeoutMs: number
+  /**
+   * Extra environment for the child, merged over the parent's. Secrets travel
+   * this way rather than on the command line, which is captured for audit.
+   */
+  env?: Record<string, string>
 }
 
 export interface ProcessHandle {

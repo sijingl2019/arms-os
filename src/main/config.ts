@@ -23,6 +23,12 @@ export interface ArmsConfig {
   runLogPath: string
   /** Destination for the generated SKILLS_INDEX.md (架构规范 §4.3). */
   skillsIndexPath: string
+  /** Connector manifest YAML, kept in the workspace under version control. */
+  connectorManifestPath: string
+  /** How long a write-irreversible tool call blocks waiting for a human. */
+  confirmationTimeoutMs: number
+  /** Loopback port for the MCP endpoint agents attach to. */
+  gatewayPort: number
   defaultAgent: AgentId
   defaultTimeoutMs: number
   /** Per-run cap on retained stdout+stderr, so a chatty skill cannot bloat the db. */
@@ -30,6 +36,7 @@ export interface ArmsConfig {
 }
 
 const TEN_MINUTES = 10 * 60 * 1000
+const FIVE_MINUTES = 5 * 60 * 1000
 
 export interface ConfigOverrides extends Partial<ArmsConfig> {}
 
@@ -52,6 +59,9 @@ export function loadConfig(overrides: ConfigOverrides = {}): ArmsConfig {
     dbPath: path.join(stateDir, 'arms-os.db'),
     runLogPath: path.join(stateDir, 'runs.log'),
     skillsIndexPath: path.join(workspaceRoot, '.claude', 'skills', 'SKILLS_INDEX.md'),
+    connectorManifestPath: path.join(workspaceRoot, 'connectors', 'manifest.yaml'),
+    confirmationTimeoutMs: FIVE_MINUTES,
+    gatewayPort: 39217,
     defaultAgent: 'claude',
     defaultTimeoutMs: TEN_MINUTES,
     outputCapBytes: 16_000
