@@ -202,3 +202,63 @@ export interface RoutineStartupReport {
   caughtUp: number
   skipped: number
 }
+
+/* ------------------------------------------------------------------- IPC */
+
+export interface SystemStatus {
+  workspaceRoot: string
+  stateDir: string
+  dbPath: string
+  runLogPath: string
+  defaultAgent: AgentId
+  scanRoots: Array<{ dir: string; source: SkillSource }>
+  skillCount: number
+  routineCount: number
+  nextTriggerAt: string | null
+  /** Runs a previous session left dangling, reconciled at startup. */
+  interruptedRuns: number
+  scheduler: RoutineStartupReport | null
+}
+
+export interface SystemTaskExport {
+  platform: string
+  command: string
+  notes: string[]
+}
+
+/**
+ * The surface `contextBridge` exposes to the renderer. The renderer never sees
+ * the filesystem, credentials, SQL or a child process - only these calls
+ * (系统设计文档 §5.1).
+ */
+export interface ArmsOsBridge {
+  skills: {
+    list(): Promise<SkillMeta[]>
+    get(id: string): Promise<SkillMeta | null>
+    refresh(): Promise<RefreshResult>
+    writeIndex(): Promise<string>
+    run(req: SkillRunRequest): Promise<RunRecord>
+    cancel(runId: string): Promise<boolean>
+  }
+  runs: {
+    history(query?: RunHistoryQuery): Promise<RunRecord[]>
+  }
+  routines: {
+    list(): Promise<RoutineDef[]>
+    create(input: RoutineInput): Promise<RoutineDef>
+    update(id: string, patch: Partial<RoutineInput>): Promise<RoutineDef>
+    remove(id: string): Promise<boolean>
+    exportSystemTask(id: string): Promise<SystemTaskExport>
+  }
+  system: {
+    status(): Promise<SystemStatus>
+  }
+  /** Every subscribe returns its own unsubscribe. */
+  on: {
+    runStarted(cb: (e: ArmsEvents['skill:run:started']) => void): () => void
+    runChunk(cb: (e: ArmsEvents['skill:run:chunk']) => void): () => void
+    runCompleted(cb: (e: ArmsEvents['skill:run:completed']) => void): () => void
+    skillsIndexed(cb: (e: ArmsEvents['skills:index:updated']) => void): () => void
+    routinesUpdated(cb: (e: ArmsEvents['routines:updated']) => void): () => void
+  }
+}

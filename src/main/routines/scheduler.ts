@@ -21,6 +21,12 @@ export interface RoutineSchedulerDeps {
   /** Resolves a skill id to decide whether a routine can fire at all. */
   hasSkill(skillId: string): boolean
   tickMs?: number
+  /**
+   * Source of "now" for everything the scheduler does, including the retry
+   * clock. Injectable so tests are not partly driven by the wall clock while
+   * the rest of their timeline is fixed.
+   */
+  clock?: () => Date
 }
 
 export interface TickResult {
@@ -49,6 +55,7 @@ export class RoutineScheduler {
   private readonly bus: ArmsBus
   private readonly hasSkill: (skillId: string) => boolean
   private readonly tickMs: number
+  private readonly clock: () => Date
 
   private timer: NodeJS.Timeout | undefined
   private unsubscribe: (() => void) | undefined
@@ -56,18 +63,19 @@ export class RoutineScheduler {
   private readonly inFlight = new Map<string, number>()
   private retries: PendingRetry[] = []
 
-  constructor({ store, bus, hasSkill, tickMs }: RoutineSchedulerDeps) {
+  constructor({ store, bus, hasSkill, tickMs, clock }: RoutineSchedulerDeps) {
     this.store = store
     this.bus = bus
     this.hasSkill = hasSkill
     this.tickMs = tickMs ?? DEFAULT_TICK_MS
+    this.clock = clock ?? (() => new Date())
   }
 
   /**
    * Reconcile schedules missed while the process was down, then begin ticking.
    * Returns what the reconciliation did so the caller can surface it.
    */
-  start(now = new Date()): RoutineStartupReport {
+  start(now = this.clock()): RoutineStartupReport {
     const report = this.reconcile(now)
 
     this.unsubscribe ??= this.bus.on('skill:run:completed', (event) => {
@@ -97,7 +105,7 @@ export class RoutineScheduler {
    * One pass of the loop. Public so tests can drive it with an explicit clock
    * instead of waiting on real time.
    */
-  tick(now = new Date()): TickResult {
+  tick(now = this.clock()): TickResult {
     const result: TickResult = { fired: [], skipped: [], retried: [] }
 
     for (const retry of this.takeDueRetries(now)) {
@@ -206,7 +214,7 @@ export class RoutineScheduler {
     const attempt = this.inFlight.get(routineId) ?? 1
     this.inFlight.delete(routineId)
 
-    const now = new Date()
+    const now = this.clock()
     this.store.markStatus(routineId, status, now, runId)
 
     const routine = this.store.get(routineId)

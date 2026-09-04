@@ -34,13 +34,20 @@ export interface CreateCoreOptions extends ConfigOverrides {
   spawner?: Spawner
   /** Overridden in tests to avoid waiting on the real 20s cadence. */
   tickMs?: number
+  /** Overridden in tests so scheduling is not driven by the wall clock. */
+  clock?: () => Date
 }
 
 /**
  * Composition root for the OS Core Services. The Electron main process will
  * call this once at `app.whenReady()`; the CLI calls it per command.
  */
-export function createCore({ spawner, tickMs, ...overrides }: CreateCoreOptions = {}): ArmsCore {
+export function createCore({
+  spawner,
+  tickMs,
+  clock,
+  ...overrides
+}: CreateCoreOptions = {}): ArmsCore {
   const config = loadConfig(overrides)
   const db = openDb(config.dbPath)
   const bus = new ArmsBus()
@@ -62,7 +69,8 @@ export function createCore({ spawner, tickMs, ...overrides }: CreateCoreOptions 
     // A routine pointing at a deleted skill must not fire; the scheduler asks
     // the registry rather than guessing.
     hasSkill: (skillId) => registry.get(skillId) !== undefined,
-    ...(tickMs === undefined ? {} : { tickMs })
+    ...(tickMs === undefined ? {} : { tickMs }),
+    ...(clock === undefined ? {} : { clock })
   })
 
   const interrupted = executor.reconcile()

@@ -316,6 +316,8 @@ describe('RoutineScheduler startup reconciliation', () => {
 describe('RoutineScheduler retries', () => {
   let fired: ArmsEvents['routine:fired'][]
   let scheduler: RoutineScheduler
+  /** Fully controlled clock: no part of this timeline comes from the wall clock. */
+  let clockNow: Date
 
   function fail(routineId: string, runId = 'r'): void {
     bus.emit('skill:run:completed', {
@@ -324,22 +326,33 @@ describe('RoutineScheduler retries', () => {
       routineId,
       status: 'failed',
       exitCode: 1,
-      endedAt: new Date().toISOString()
+      endedAt: clockNow.toISOString()
     })
+  }
+
+  function advanceTo(iso: string): void {
+    clockNow = AT(iso)
   }
 
   beforeEach(() => {
     fired = []
+    clockNow = AT('2026-09-04T08:00:00Z')
     bus.on('routine:fired', (e) => fired.push(e))
-    scheduler = new RoutineScheduler({ store, bus, hasSkill: () => true })
+    scheduler = new RoutineScheduler({
+      store,
+      bus,
+      hasSkill: () => true,
+      clock: () => clockNow
+    })
   })
 
   afterEach(() => scheduler.stop())
 
   it('does not retry when maxRetries is 0', () => {
     const routine = make()
-    scheduler.start(AT('2026-09-04T08:00:00Z'))
-    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
     fail(routine.id)
 
     expect(scheduler.pendingRetries()).toBe(0)
@@ -347,8 +360,9 @@ describe('RoutineScheduler retries', () => {
 
   it('does not retry a run that succeeded', () => {
     const routine = make({ maxRetries: 2 })
-    scheduler.start(AT('2026-09-04T08:00:00Z'))
-    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
 
     bus.emit('skill:run:completed', {
       runId: 'ok',
@@ -356,7 +370,7 @@ describe('RoutineScheduler retries', () => {
       routineId: routine.id,
       status: 'succeeded',
       exitCode: 0,
-      endedAt: new Date().toISOString()
+      endedAt: clockNow.toISOString()
     })
 
     expect(scheduler.pendingRetries()).toBe(0)
@@ -364,13 +378,15 @@ describe('RoutineScheduler retries', () => {
 
   it('queues a retry after a failure and fires it as attempt 2', () => {
     const routine = make({ maxRetries: 1, retryDelayMs: 0 })
-    scheduler.start(AT('2026-09-04T08:00:00Z'))
-    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
     fail(routine.id)
 
     expect(scheduler.pendingRetries()).toBe(1)
 
-    const result = scheduler.tick(AT('2026-09-04T09:01:00Z'))
+    advanceTo('2026-09-04T09:01:00Z')
+    const result = scheduler.tick()
     expect(result.retried).toEqual([routine.id])
     expect(fired).toHaveLength(2)
     expect(fired[1]?.attempt).toBe(2)
@@ -378,30 +394,51 @@ describe('RoutineScheduler retries', () => {
 
   it('holds the retry until its delay has elapsed', () => {
     const routine = make({ maxRetries: 1, retryDelayMs: 10 * 60_000 })
-    scheduler.start(AT('2026-09-04T08:00:00Z'))
-    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
     fail(routine.id)
 
-    scheduler.tick(new Date(Date.now() + 60_000))
+    advanceTo('2026-09-04T09:01:00Z')
+    scheduler.tick()
     expect(fired).toHaveLength(1)
     expect(scheduler.pendingRetries()).toBe(1)
 
-    scheduler.tick(new Date(Date.now() + 11 * 60_000))
+    advanceTo('2026-09-04T09:11:00Z')
+    scheduler.tick()
     expect(fired).toHaveLength(2)
   })
 
   it('stops retrying once maxRetries is exhausted', () => {
     const routine = make({ maxRetries: 1, retryDelayMs: 0 })
-    scheduler.start(AT('2026-09-04T08:00:00Z'))
-    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
 
     fail(routine.id, 'run-1')
-    scheduler.tick(AT('2026-09-04T09:01:00Z'))
+    advanceTo('2026-09-04T09:01:00Z')
+    scheduler.tick()
     expect(fired).toHaveLength(2)
 
     fail(routine.id, 'run-2')
     expect(scheduler.pendingRetries()).toBe(0)
-    scheduler.tick(AT('2026-09-04T09:02:00Z'))
+    advanceTo('2026-09-04T09:02:00Z')
+    scheduler.tick()
     expect(fired).toHaveLength(2)
+  })
+
+  it('does not let a scheduled occurrence sneak into a retry-only tick', () => {
+    // Guards the bug this rewrite fixed: when the retry timeline and the cron
+    // timeline share a clock, a late tick must not silently fire both.
+    const routine = make({ maxRetries: 1, retryDelayMs: 60_000 })
+    scheduler.start()
+    advanceTo('2026-09-04T09:00:01Z')
+    scheduler.tick()
+    fail(routine.id)
+
+    advanceTo('2026-09-04T09:02:00Z')
+    const result = scheduler.tick()
+    expect(result.retried).toEqual([routine.id])
+    expect(result.fired).toEqual([])
   })
 })
