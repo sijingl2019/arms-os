@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
+import { loadConfig } from './config'
 import { createCore, type ArmsCore } from './core'
+import { createElectronVault } from './gateway/electronVault'
 import { registerIpc } from './ipc/register'
 
 /**
@@ -18,6 +20,8 @@ let tray: Tray | undefined
 let mainWindow: BrowserWindow | undefined
 /** Set on `before-quit` so a close during shutdown is not treated as hide. */
 let quitting = false
+/** Mirrored into the tray tooltip so a waiting approval is visible when hidden. */
+let pendingApprovals = 0
 
 // A second instance would bind a second scheduler to the same database and
 // double-fire every routine.
@@ -91,6 +95,15 @@ function trayIcon(): Electron.NativeImage {
   return image.isEmpty() ? nativeImage.createEmpty() : image
 }
 
+function refreshTray(): void {
+  if (!tray) return
+  tray.setToolTip(
+    pendingApprovals > 0
+      ? `ARMS Agentic OS - ${pendingApprovals} action(s) awaiting approval`
+      : 'ARMS Agentic OS'
+  )
+}
+
 function buildTray(): Tray {
   const t = new Tray(trayIcon())
   t.setToolTip('ARMS Agentic OS')
@@ -98,6 +111,12 @@ function buildTray(): Tray {
     Menu.buildFromTemplate([
       { label: 'Open dashboard', click: showWindow },
       { type: 'separator' },
+      {
+        label: 'Reload connectors',
+        click: () => {
+          void core?.gateway.reload()
+        }
+      },
       {
         label: 'Rescan skills',
         click: () => {
@@ -127,7 +146,10 @@ function buildTray(): Tray {
 app.on('second-instance', showWindow)
 
 void app.whenReady().then(async () => {
-  core = createCore()
+  // safeStorage only exists here, in the main process; the CLI deliberately
+  // gets a vault that refuses rather than a weaker fallback.
+  const config = loadConfig()
+  core = createCore({ vault: createElectronVault(config.stateDir) })
   teardownIpc = registerIpc({
     core,
     windows: () => BrowserWindow.getAllWindows()
@@ -137,6 +159,28 @@ void app.whenReady().then(async () => {
   // sees a populated registry on the very first tick.
   await core.registry.refresh()
   core.startScheduler()
+
+  try {
+    const gateway = await core.startGateway()
+    console.log(`[gateway] listening on ${gateway.endpoint}`)
+    for (const issue of gateway.issues) console.warn(`[gateway] ${issue}`)
+  } catch (err) {
+    // A blocked port must not take the whole app down: skills and routines
+    // still work without an MCP endpoint.
+    console.error(`[gateway] not started: ${(err as Error).message}`)
+  }
+
+  // A pending approval is the one thing worth surfacing while hidden - the
+  // agent is blocked until someone answers.
+  core.bus.on('gateway:confirmation:pending', () => {
+    pendingApprovals += 1
+    refreshTray()
+    showWindow()
+  })
+  core.bus.on('gateway:confirmation:decided', () => {
+    pendingApprovals = Math.max(0, pendingApprovals - 1)
+    refreshTray()
+  })
 
   tray = buildTray()
   mainWindow = createWindow()
@@ -158,7 +202,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   teardownIpc?.()
-  core?.close()
+  void core?.close()
   tray?.destroy()
   core = undefined
   tray = undefined

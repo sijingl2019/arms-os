@@ -121,6 +121,8 @@ export function createCore({
     close: async () => {
       scheduler.stop()
       executor.stop()
+      // Let pending runs.log appends land before the process goes away.
+      await runs.flush()
       await gateway.stop()
       bus.removeAll()
       db.close()

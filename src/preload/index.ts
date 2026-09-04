@@ -42,12 +42,26 @@ const bridge: ArmsOsBridge = {
   system: {
     status: () => ipcRenderer.invoke(CH.systemStatus)
   },
+  gateway: {
+    status: () => ipcRenderer.invoke(CH.gatewayStatus),
+    reload: () => ipcRenderer.invoke(CH.gatewayReload),
+    toolCalls: (limit?: number) => ipcRenderer.invoke(CH.gatewayToolCalls, limit)
+  },
+  confirmations: {
+    pending: () => ipcRenderer.invoke(CH.confirmationsPending),
+    history: (limit?: number) => ipcRenderer.invoke(CH.confirmationsHistory, limit),
+    approve: (id: string) => ipcRenderer.invoke(CH.confirmationsApprove, id),
+    reject: (id: string, reason: string) => ipcRenderer.invoke(CH.confirmationsReject, id, reason)
+  },
   on: {
     runStarted: (cb) => subscribe(CH.eventRunStarted, cb),
     runChunk: (cb) => subscribe(CH.eventRunChunk, cb),
     runCompleted: (cb) => subscribe(CH.eventRunCompleted, cb),
     skillsIndexed: (cb) => subscribe(CH.eventSkillsIndexed, cb),
-    routinesUpdated: (cb) => subscribe(CH.eventRoutinesUpdated, cb)
+    routinesUpdated: (cb) => subscribe(CH.eventRoutinesUpdated, cb),
+    confirmationPending: (cb) => subscribe(CH.eventConfirmationPending, cb),
+    confirmationDecided: (cb) => subscribe(CH.eventConfirmationDecided, cb),
+    toolCalled: (cb) => subscribe(CH.eventToolCalled, cb)
   }
 }
 

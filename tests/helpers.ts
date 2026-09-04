@@ -51,7 +51,10 @@ export function createHarness(): Harness {
       return file
     },
     cleanup() {
-      rmSync(dir, { recursive: true, force: true })
+      // Windows raises EBUSY when a directory still has an open handle, and the
+      // run log is written fire-and-forget on purpose (a logging failure must
+      // never fail a run). Retry rather than make production await the write.
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
     }
   }
 }

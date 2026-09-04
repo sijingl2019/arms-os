@@ -67,6 +67,12 @@ export interface RunStoreOptions {
 export class RunStore {
   private readonly db: Db
   private readonly logPath: string | undefined
+  /**
+   * Log appends are started but not awaited by callers, so track them here.
+   * Without this, a quit (or a test teardown) can race an in-flight write and
+   * either lose the line or trip over the still-open handle.
+   */
+  private readonly inFlightLogs = new Set<Promise<void>>()
 
   constructor({ db, logPath }: RunStoreOptions) {
     this.db = db
@@ -173,9 +179,26 @@ export class RunStore {
     return info.changes
   }
 
+  /** Wait for every started log append to finish. Called on shutdown. */
+  async flush(): Promise<void> {
+    while (this.inFlightLogs.size > 0) {
+      await Promise.allSettled([...this.inFlightLogs])
+    }
+  }
+
   /** Best-effort append to runs.log; a logging failure must not fail a run. */
   async appendLog(record: RunRecord): Promise<void> {
     if (!this.logPath) return
+    const write = this.writeLogLine(this.logPath, record)
+    this.inFlightLogs.add(write)
+    try {
+      await write
+    } finally {
+      this.inFlightLogs.delete(write)
+    }
+  }
+
+  private async writeLogLine(logPath: string, record: RunRecord): Promise<void> {
     const seconds = record.durationMs === null ? 'n/a' : `${Math.round(record.durationMs / 1000)}s`
     const line =
       `${record.startedAt}  ${record.status.toUpperCase().padEnd(11)} ${record.label}  ` +
@@ -184,8 +207,8 @@ export class RunStore {
       `exit=${record.exitCode ?? 'n/a'}  ${seconds}  ${record.command}\n`
 
     try {
-      await mkdir(path.dirname(this.logPath), { recursive: true })
-      await appendFile(this.logPath, line, 'utf8')
+      await mkdir(path.dirname(logPath), { recursive: true })
+      await appendFile(logPath, line, 'utf8')
     } catch {
       /* the table is the record of truth; the log is a convenience */
     }

@@ -1,0 +1,41 @@
+# Connector manifest (Connector Gateway 设计文档 §3.4).
+#
+# Copy to manifest.yaml and edit. Risk is per tool, not per connector:
+#   read-only          passes straight through
+#   write-reversible   passes, flagged in the audit trail
+#   write-irreversible blocks until a human approves it in the dashboard
+#
+# Omitting default_risk means write-irreversible. That is deliberate: a
+# connector author must opt *down* from strict, never accidentally opt out.
+
+- id: gmail
+  transport: mcp-stdio
+  command: ['npx', '-y', '@modelcontextprotocol/server-gmail']
+  credential_ref: vault://gmail-oauth
+  default_risk: read-only
+  overrides:
+    send_message: write-reversible
+    trash_message: write-irreversible
+
+# A self-built CLI cannot be introspected, so it must declare its own tools.
+# It is invoked as: <command> <tool-name> '<json-args>'
+- id: weibo-post
+  transport: cli
+  command: ['node', 'connectors/weibo-post/cli.js']
+  credential_ref: vault://weibo-cookie
+  default_risk: write-irreversible
+  tools:
+    - name: publish
+      description: publish a post to weibo
+      input_schema:
+        type: object
+        required: [text]
+        properties:
+          text: { type: string }
+    - name: search
+      description: search public posts
+      risk: read-only
+      input_schema:
+        type: object
+        properties:
+          q: { type: string }

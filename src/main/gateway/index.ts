@@ -75,16 +75,16 @@ export class ConnectorGateway {
     this.lastIssues = refresh.issues
 
     const endpoint = await this.server.start()
-    this.server.syncTools()
-
     return { endpoint, expired, issues: refresh.issues }
   }
 
-  /** Re-read the manifest without restarting the HTTP server. */
+  /**
+   * Re-read the manifest. The HTTP server keeps running: it builds its tool
+   * list per request, so the new manifest is live on the very next call.
+   */
   async reload(): Promise<string[]> {
     const refresh = await this.registry.refresh()
     this.lastIssues = refresh.issues
-    this.server.syncTools()
     return refresh.issues
   }
 

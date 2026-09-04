@@ -29,6 +29,13 @@ const USAGE = `arms - ARMS Agentic OS skill tooling
                                         recent run records
   arms doctor                           show resolved config and scan roots
 
+  arms gateway status                   connectors, tools and their risk tiers
+  arms gateway serve                    run the MCP endpoint until Ctrl+C
+  arms gateway calls [--limit N]        recent tool calls from the audit table
+  arms gateway pending                  approvals waiting on a human
+  arms gateway approve <id>
+  arms gateway reject <id> [--reason R]
+
   arms routines list                    list routines with their next run time
   arms routines add --name N --skill S --cron "0 9 * * *" [routine options]
   arms routines set <id> [routine options]
@@ -393,6 +400,105 @@ async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
   return 2
 }
 
+async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
+  const [, sub = 'status', ...rest] = flags.positional
+
+  if (sub === 'status' || sub === 'serve') {
+    const started = await core.startGateway()
+    const status = core.gatewayStatus()
+
+    console.log(`endpoint   ${started.endpoint}`)
+    console.log(`manifest   ${status.manifestPath}`)
+    console.log(`vault      ${status.vault.kind} (available=${status.vault.available})`)
+    if (started.expired > 0) {
+      console.log(`expired    ${started.expired} approval(s) left pending by a previous session`)
+    }
+    for (const issue of status.issues) console.warn(`warn: ${issue}`)
+
+    if (status.tools.length === 0) {
+      console.log('\n(no connector tools - is connectors/manifest.yaml present?)')
+    } else {
+      console.log('\ntools')
+      for (const tool of status.tools) {
+        console.log(`  ${tool.qualifiedName.padEnd(32)} [${tool.risk}] ${tool.description}`)
+      }
+    }
+
+    if (sub !== 'serve') return 0
+
+    console.log('\nattach an agent with:')
+    console.log(`  claude mcp add --transport http arms-gateway ${started.endpoint}`)
+    console.log(`  codex  mcp add arms-gateway --url ${started.endpoint}`)
+    console.log('\nlistening - Ctrl+C to stop')
+    // Approvals need a human, and there is no dashboard here, so say so loudly.
+    core.bus.on('gateway:confirmation:pending', (item) => {
+      console.log(`\n[approval needed] ${item.qualifiedName} ${JSON.stringify(item.args)}`)
+      console.log(`  arms gateway approve ${item.confirmationId}`)
+      console.log(`  arms gateway reject  ${item.confirmationId}`)
+    })
+    await new Promise<void>((resolve) => process.once('SIGINT', () => resolve()))
+    return 0
+  }
+
+  if (sub === 'calls') {
+    const limit = Number(str(flags, 'limit') ?? 30)
+    const rows = core.db
+      .prepare('SELECT * FROM tool_calls ORDER BY started_at DESC LIMIT ?')
+      .all(limit) as Array<Record<string, string | number | null>>
+    if (rows.length === 0) {
+      console.log('(no tool calls recorded)')
+      return 0
+    }
+    for (const r of rows) {
+      console.log(
+        `${String(r['started_at'])}  ${String(r['outcome']).padEnd(10)} ` +
+          `${String(r['qualified_name']).padEnd(30)} [${String(r['risk'])}] ${r['error'] ?? ''}`
+      )
+    }
+    return 0
+  }
+
+  if (sub === 'pending') {
+    const items = core.gateway.confirmations.listPending()
+    if (items.length === 0) {
+      console.log('(nothing awaiting approval)')
+      return 0
+    }
+    for (const item of items) {
+      console.log(`${item.confirmationId}  ${item.qualifiedName}  [${item.risk}]`)
+      console.log(`  args    ${JSON.stringify(item.args)}`)
+      console.log(`  expires ${item.expiresAt}`)
+    }
+    return 0
+  }
+
+  if (sub === 'approve' || sub === 'reject') {
+    const id = rest[0]
+    if (!id) {
+      console.error(`usage: arms gateway ${sub} <confirmation-id>`)
+      return 2
+    }
+    const ok =
+      sub === 'approve'
+        ? core.gateway.confirmations.approve(id)
+        : core.gateway.confirmations.reject(id, str(flags, 'reason') ?? 'rejected from the CLI')
+    if (!ok) {
+      // A separate CLI process cannot answer a request the app is blocking on:
+      // the waiting promise lives in that other process.
+      console.error(
+        `no pending approval with id ${id} in this process ` +
+          '(an approval is answered by whichever process is blocking on it)'
+      )
+      return 1
+    }
+    console.log(`${sub}d ${id}`)
+    return 0
+  }
+
+  console.error(`unknown subcommand: gateway ${sub}`)
+  return 2
+}
+
 function doctorCommand(core: ArmsCore): number {
   const { config } = core
   console.log(`workspace     ${config.workspaceRoot}`)
@@ -436,6 +542,8 @@ async function main(): Promise<number> {
         return await skillsCommand(core, flags)
       case 'run':
         return await runCommand(core, flags)
+      case 'gateway':
+        return await gatewayCommand(core, flags)
       case 'routines':
         return await routinesCommand(core, flags)
       case 'runs': {

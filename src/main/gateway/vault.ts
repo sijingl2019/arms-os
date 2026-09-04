@@ -48,16 +48,16 @@ export class RefusingVault implements CredentialVault {
     )
   }
 
-  async set(): Promise<void> {
+  async set(_id: string, _plaintext: string): Promise<void> {
     this.fail()
   }
-  async get(): Promise<string> {
+  async get(_id: string): Promise<string> {
     this.fail()
   }
-  async has(): Promise<boolean> {
+  async has(_id: string): Promise<boolean> {
     return false
   }
-  async remove(): Promise<void> {
+  async remove(_id: string): Promise<void> {
     this.fail()
   }
   async list(): Promise<string[]> {

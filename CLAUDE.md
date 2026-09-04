@@ -35,7 +35,7 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 
 ## 代码现状
 
-本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**托盘常驻的 Electron + React 外壳**（Skills / Routines / Runs / System 四个面板）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
+本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail 中间件链 + 阻塞式审批队列）、**托盘常驻的 Electron + React 外壳**（Skills / Routines / Runs / Gateway / System 五个面板）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
 
 注意：隔壁 `E:\Workspace\agentic-os` 是更早的 Electron MVP（Dashboard、Second Brain 图谱、Skills Deck），本仓库只把它当参考，不修改它。将来接 Electron 外壳时，UI 层可以从那边搬。
 
@@ -43,6 +43,6 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 
 1. ~~搭建 Skill Registry & Executor 模块脚手架~~ ✅ 已完成
 2. ~~接入 Routine Scheduler 持久化调度~~ ✅ 已完成（croner + 持久化 next_run_at + 托盘常驻；另有 `routines export` 生成系统级定时任务作为 L2 逃生舱）
-3. 实现 Connector Gateway 的 MCP HTTP Server + Guardrail 中间件雏形
+3. ~~实现 Connector Gateway 的 MCP HTTP Server + Guardrail 中间件雏形~~ ✅ 已完成（风险三档精确到 tool、未标注即最严档、审批改为阻塞式而非文档 §2.3 的占位符轮询；BrowserAdapter 仍只有接口）
 4. Memory Indexer 增量索引优化，解决"Index hit its file cap"的规模问题
 5. 待补：Skill 市场、"我的 Skill"管理界面

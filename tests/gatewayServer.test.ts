@@ -81,7 +81,7 @@ afterEach(async () => {
   await client?.close().catch(() => {})
   client = undefined
   await core.close()
-  rmSync(dir, { recursive: true, force: true })
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 describe('MCP over HTTP', () => {
@@ -172,9 +172,28 @@ describe('MCP over HTTP', () => {
     expect(JSON.stringify(result.content)).toMatch(/missing required/)
   })
 
-  it('reports an unknown tool rather than silently doing nothing', async () => {
+  it('reports an unknown tool as a readable tool error, not a silent no-op', async () => {
     const c = await connect()
-    await expect(c.callTool({ name: 'demo.nope', arguments: {} })).rejects.toThrow()
+    const result = (await c.callTool({ name: 'demo.nope', arguments: {} })) as {
+      isError?: boolean
+      content: Array<{ text: string }>
+    }
+    // Surfaced as a tool error so the agent can read why and adjust, rather
+    // than as a protocol failure it can only retry.
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.content)).toMatch(/no tool: demo\.nope/)
+  })
+
+  it("advertises each tool's real input schema so an agent can call it correctly", async () => {
+    const c = await connect()
+    const { tools } = await c.listTools()
+    const search = tools.find((t) => t.name === 'demo.search')
+
+    expect(search?.inputSchema).toMatchObject({
+      type: 'object',
+      required: ['q'],
+      properties: { q: { type: 'string' } }
+    })
   })
 
   it('reports its own status for the dashboard', () => {

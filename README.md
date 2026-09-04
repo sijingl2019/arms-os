@@ -2,7 +2,7 @@
 
 基于 Applications / Routines / Memory / Skills 四层框架的个人智能体操作系统。设计文档见仓库根目录的三份 `*_v1.md`，模块规格见 `docs/superpowers/specs/`。
 
-当前已实现：**Skill Registry & Executor**、**Routine Scheduler**，以及托盘常驻的 **Electron + React 外壳**。
+当前已实现：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail），以及托盘常驻的 **Electron + React 外壳**。
 
 ## 快速开始
 
@@ -45,6 +45,10 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 | `arms routines set <id>` / `rm <id>` | 修改 / 删除 |
 | `arms routines tick [--at <iso>] [--dry-run]` | 手动跑一轮调度（dry-run 会摘掉 Executor） |
 | `arms routines export <id>` | 生成系统级定时任务命令 |
+| `arms gateway status` | connector、tool 及其风险等级 |
+| `arms gateway serve` | 前台跑 MCP 端点直到 Ctrl+C |
+| `arms gateway calls` / `pending` | 调用审计 / 待批准队列 |
+| `arms gateway approve <id>` / `reject <id>` | 批准 / 拒绝 |
 
 `run` 的参数：`--args`、`--agent claude\|codex`、`--model`、`--effort`、`--cwd`、`--timeout <ms>`、`--dry-run`。
 全局：`--workspace <dir>`。
@@ -75,6 +79,7 @@ src/
     agents/              AgentRuntime 抽象 + claude / codex + 进程 spawn
     runs/                runs 表 + runs.log
     routines/            RoutineStore + Scheduler + 系统级任务导出
+    gateway/             manifest / registry / 适配器 / 中间件链 / 确认队列 / MCP HTTP Server
     executor/            SkillExecutor
     core.ts              组合根
   preload/index.ts       contextBridge 暴露的唯一通道
@@ -115,6 +120,33 @@ skill:run:completed
 skills:index:updated
 ```
 
+## Connector Gateway
+
+所有触达外部世界的动作**只有这一个入口**，Guardrail 是唯一的强制拦截点。Agent 只配一个地址：
+
+```bash
+claude mcp add --transport http arms-gateway http://127.0.0.1:39217/mcp
+codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
+```
+
+它不知道背后有几个真实 connector。工具名统一 `<connector>.<tool>`，换实现不影响 agent 侧。
+
+**风险三档，精确到每个 tool**（`connectors/manifest.yaml`，从 `.example` 复制）：
+
+| 等级 | 行为 |
+|---|---|
+| `read-only` | 直接放行 |
+| `write-reversible` | 放行，审计里高亮 |
+| `write-irreversible` | **阻塞**，直到你在 Dashboard 点批准 |
+
+**没写 `default_risk` 就是最严档。** 这是故意的：connector 作者只能主动往下调，不能因为忘了标注而意外放行。同理，看不懂的风险标签也一律按最严处理。
+
+**审批是阻塞式的**：`tools/call` 一直挂着直到你批准/拒绝或超时（默认 5 分钟），然后返回真实结果。设计文档 §2.3 原本写的是立刻返回占位符让 agent 轮询——实践中 agent 会把占位符当成功继续往下跑，所以改成阻塞。有审批待处理时托盘 tooltip 会提示，窗口会自动弹出。
+
+中间件链顺序在 `dispatcher.ts` 一处声明：审计 → schema 校验 → 限流 → **Guardrail** → 熔断。审计**包在最外层**，因为被拦下的调用恰恰是最该进日志的。
+
+凭据只以 `vault://<id>` 引用形式出现在 manifest 里，解密发生在真正调用下游的那一刻，且只进子进程环境变量、绝不上命令行（命令行会进审计日志）。
+
 ## 已知技术债
 
 1. ~~`better-sqlite3` 接 Electron 需要 `electron-rebuild`~~ 已解决：升到 v13 后它是 Node-API 插件，
@@ -125,4 +157,8 @@ skills:index:updated
 5. Routine 重试队列只在内存里，主进程重启会丢掉待重试项（已触发的运行记录不受影响）
 6. 托盘图标是 1x1 透明占位图，等真正做视觉时再换
 7. `npm run dev` 的热重载链路未做自动化验证，目前只验证了 `npm run build` 产物的启动与交互
-8. 测试套件在一次与构建并发的运行里出现过一次未复现的失败；已排掉一处确定的时间依赖（见下），此后 9 次连续运行（含并发负载）全绿，但未能定位原始那次
+8. ~~测试套件偶发失败未定位~~ 已解决：Windows 上的 `EBUSY`。`runs.log` 是有意的 fire-and-forget 写入（日志失败不能让运行失败），临时目录清理时写入还没落盘。顺带修掉一个真问题：退出时未完成的日志追加会丢——`RunStore.flush()` 现在会在 `close()` 里等它写完
+9. `BrowserAdapter` 只有接口没有实现，调用会明确报错——架构规范 §7.1 本来就把浏览器自动化定为最后手段
+10. Gateway 的 schema 校验是浅校验（必填字段 + 基本类型），不是完整 JSON Schema 验证器；它只拦明显畸形的调用，真正的安全边界是 Guardrail
+11. 限流与熔断是进程内内存状态，重启即清零
+12. 设计文档 §7 把 Gateway 调用记在 `runs` 表，实现里另建了 `tool_calls` 表——两者列几乎不重叠（run 有命令行/退出码/流式输出，tool call 有 connector/JSON 参数/风险判定），合表会让任一种行有一半是 NULL

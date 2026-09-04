@@ -1,7 +1,13 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as HttpServer,
+  type ServerResponse
+} from 'node:http'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Dispatcher } from './dispatcher'
 import type { ConnectorRegistry } from './registry'
 import { GatewayError } from './types'
@@ -27,7 +33,7 @@ const MCP_PATH = '/mcp'
 /**
  * The SDK's option and transport interfaces declare optional members without an
  * explicit `| undefined`, which `exactOptionalPropertyTypes` will not unify.
- * Both casts below are that mismatch and nothing else - keeping them here, and
+ * The casts below are that mismatch and nothing else - keeping them here, and
  * only here, avoids relaxing the compiler option for the whole main process.
  */
 const sdkCompat = <T,>(value: unknown): T => value as T
@@ -43,10 +49,7 @@ export class McpGatewayServer {
   private readonly dispatcher: Dispatcher
   private readonly port: number
 
-  private http: Server | undefined
-  private mcp: McpServer | undefined
-  private transport: StreamableHTTPServerTransport | undefined
-  private registered = new Set<string>()
+  private http: HttpServer | undefined
 
   constructor({ registry, dispatcher, port }: McpGatewayServerOptions) {
     this.registry = registry
@@ -65,34 +68,77 @@ export class McpGatewayServer {
   async start(): Promise<string> {
     if (this.http?.listening) return this.endpoint as string
 
-    const mcp = new McpServer({ name: 'arms-gateway', version: '0.1.0' })
-    this.mcp = mcp
-    this.syncTools()
-
-    // Stateless: each agent process is its own short-lived client, and there is
-    // no cross-request state worth the session bookkeeping.
-    const transport = new StreamableHTTPServerTransport(
-      sdkCompat<ConstructorParameters<typeof StreamableHTTPServerTransport>[0]>({
-        sessionIdGenerator: undefined
-      })
-    )
-    this.transport = transport
-    await mcp.connect(sdkCompat<Transport>(transport))
-
     const http = createServer((req, res) => {
       void this.handle(req, res)
     })
     this.http = http
 
     await new Promise<void>((resolve, reject) => {
-      http.once('error', reject)
+      const onError = (err: NodeJS.ErrnoException): void => {
+        this.http = undefined
+        reject(err.code === 'EADDRINUSE' ? portInUseError(this.port) : err)
+      }
+      http.once('error', onError)
       http.listen(this.port, HOST, () => {
-        http.off('error', reject)
+        http.off('error', onError)
         resolve()
       })
     })
 
     return this.endpoint as string
+  }
+
+  /**
+   * A fresh MCP server per request.
+   *
+   * This is the SDK's stateless pattern, and it is not optional: a
+   * `StreamableHTTPServerTransport` tracks one response stream, so reusing a
+   * single instance across requests fails on everything after the first. It
+   * also means each request re-reads the registry, so a manifest reload takes
+   * effect immediately and a removed tool really is gone.
+   *
+   * The low-level `Server` is used rather than `McpServer` on purpose. A
+   * gateway proxies arbitrary tools carrying arbitrary JSON Schemas, whereas
+   * `McpServer.registerTool` is built around hand-written Zod shapes - and when
+   * handed no shape it invokes the callback with only the request extras, so
+   * the tool's actual arguments never arrive.
+   */
+  private buildServer(): Server {
+    const server = new Server(
+      { name: 'arms-gateway', version: '0.1.0' },
+      { capabilities: { tools: {} } }
+    )
+
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: this.registry.tools().map((tool) => ({
+        name: tool.qualifiedName,
+        // The risk tier is visible to the agent so it can reason about it -
+        // but the Gateway, not the agent, is what enforces it.
+        description: `[${tool.risk}] ${tool.description}`.trim(),
+        inputSchema: tool.inputSchema as { type: 'object' }
+      }))
+    }))
+
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const args = request.params.arguments ?? {}
+      try {
+        const result = await this.dispatcher.call({
+          qualifiedName: request.params.name,
+          args: args as Record<string, unknown>
+        })
+        return { content: result.content, ...(result.isError ? { isError: true } : {}) }
+      } catch (err) {
+        // Report the refusal as a tool error rather than a protocol error: the
+        // agent needs to read why it was stopped and adjust, not just see the
+        // call fail.
+        return {
+          content: [{ type: 'text' as const, text: (err as Error).message }],
+          isError: true
+        }
+      }
+    })
+
+    return server
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -107,45 +153,43 @@ export class McpGatewayServer {
       res.writeHead(403, { 'content-type': 'text/plain' }).end('loopback only')
       return
     }
+    // Stateless means no server-initiated stream and no session to delete.
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' }).end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'this gateway is stateless; use POST' },
+          id: null
+        })
+      )
+      return
+    }
+
+    const server = this.buildServer()
+    const transport = new StreamableHTTPServerTransport(
+      sdkCompat<ConstructorParameters<typeof StreamableHTTPServerTransport>[0]>({
+        sessionIdGenerator: undefined
+      })
+    )
+
+    res.on('close', () => {
+      void transport.close().catch(() => {})
+      void server.close().catch(() => {})
+    })
 
     try {
-      await this.transport?.handleRequest(req, res)
+      await server.connect(sdkCompat<Transport>(transport))
+      await transport.handleRequest(req, res)
     } catch (err) {
-      if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' })
-      res.end((err as Error).message)
-    }
-  }
-
-  /**
-   * Publish the registry's tools onto the MCP server.
-   *
-   * Called again after a manifest reload. The SDK has no "unregister", so a
-   * tool that disappears is left registered and made to fail loudly rather than
-   * silently routing to a connector that no longer exists.
-   */
-  syncTools(): void {
-    const mcp = this.mcp
-    if (!mcp) return
-
-    for (const tool of this.registry.tools()) {
-      if (this.registered.has(tool.qualifiedName)) continue
-      this.registered.add(tool.qualifiedName)
-
-      mcp.registerTool(
-        tool.qualifiedName,
-        {
-          // The risk tier is part of the description so the agent can reason
-          // about it too - though the Gateway, not the agent, enforces it.
-          description: `[${tool.risk}] ${tool.description}`.trim(),
-          inputSchema: undefined
-        },
-        async (args: unknown) => {
-          const result = await this.dispatcher.call({
-            qualifiedName: tool.qualifiedName,
-            args: (args ?? {}) as Record<string, unknown>
-          })
-          return { content: result.content, ...(result.isError ? { isError: true } : {}) }
-        }
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'application/json' })
+      }
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: (err as Error).message },
+          id: null
+        })
       )
     }
   }
@@ -156,14 +200,6 @@ export class McpGatewayServer {
     if (http?.listening) {
       await new Promise<void>((resolve) => http.close(() => resolve()))
     }
-    try {
-      await this.mcp?.close()
-    } catch {
-      /* already closed */
-    }
-    this.mcp = undefined
-    this.transport = undefined
-    this.registered = new Set()
   }
 }
 

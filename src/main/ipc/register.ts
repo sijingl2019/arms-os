@@ -83,12 +83,38 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
 
   ipcMain.handle(CH.systemStatus, () => buildStatus(core))
 
+  ipcMain.handle(CH.gatewayStatus, () => core.gatewayStatus())
+  ipcMain.handle(CH.gatewayReload, () => core.gateway.reload())
+  ipcMain.handle(CH.gatewayToolCalls, (_e, limit?: number) =>
+    core.db
+      .prepare('SELECT * FROM tool_calls ORDER BY started_at DESC LIMIT ?')
+      .all(limit ?? 100)
+  )
+
+  ipcMain.handle(CH.confirmationsPending, () => core.gateway.confirmations.listPending())
+  ipcMain.handle(CH.confirmationsHistory, (_e, limit?: number) =>
+    core.gateway.confirmations.history(limit ?? 50)
+  )
+  ipcMain.handle(CH.confirmationsApprove, (_e, id: string) =>
+    core.gateway.confirmations.approve(id)
+  )
+  ipcMain.handle(CH.confirmationsReject, (_e, id: string, reason: string) =>
+    core.gateway.confirmations.reject(id, reason)
+  )
+
   const unsubscribes = [
     core.bus.on('skill:run:started', (e) => broadcast(CH.eventRunStarted, e)),
     core.bus.on('skill:run:chunk', (e) => broadcast(CH.eventRunChunk, e)),
     core.bus.on('skill:run:completed', (e) => broadcast(CH.eventRunCompleted, e)),
     core.bus.on('skills:index:updated', (e) => broadcast(CH.eventSkillsIndexed, e)),
-    core.bus.on('routines:updated', (e) => broadcast(CH.eventRoutinesUpdated, e))
+    core.bus.on('routines:updated', (e) => broadcast(CH.eventRoutinesUpdated, e)),
+    core.bus.on('gateway:confirmation:pending', (e) =>
+      broadcast(CH.eventConfirmationPending, e)
+    ),
+    core.bus.on('gateway:confirmation:decided', (e) =>
+      broadcast(CH.eventConfirmationDecided, e)
+    ),
+    core.bus.on('gateway:tool:called', (e) => broadcast(CH.eventToolCalled, e))
   ]
 
   const channels = [
@@ -104,7 +130,14 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.routinesUpdate,
     CH.routinesRemove,
     CH.routinesExport,
-    CH.systemStatus
+    CH.systemStatus,
+    CH.gatewayStatus,
+    CH.gatewayReload,
+    CH.gatewayToolCalls,
+    CH.confirmationsPending,
+    CH.confirmationsHistory,
+    CH.confirmationsApprove,
+    CH.confirmationsReject
   ]
 
   return () => {

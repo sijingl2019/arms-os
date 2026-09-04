@@ -256,6 +256,18 @@ export interface ArmsOsBridge {
   system: {
     status(): Promise<SystemStatus>
   }
+  gateway: {
+    status(): Promise<GatewayStatus>
+    reload(): Promise<string[]>
+    toolCalls(limit?: number): Promise<ToolCallRecord[]>
+  }
+  /** The approval queue behind every write-irreversible action (§2.3). */
+  confirmations: {
+    pending(): Promise<PendingConfirmation[]>
+    history(limit?: number): Promise<PendingConfirmation[]>
+    approve(id: string): Promise<boolean>
+    reject(id: string, reason: string): Promise<boolean>
+  }
   /** Every subscribe returns its own unsubscribe. */
   on: {
     runStarted(cb: (e: ArmsEvents['skill:run:started']) => void): () => void
@@ -263,6 +275,11 @@ export interface ArmsOsBridge {
     runCompleted(cb: (e: ArmsEvents['skill:run:completed']) => void): () => void
     skillsIndexed(cb: (e: ArmsEvents['skills:index:updated']) => void): () => void
     routinesUpdated(cb: (e: ArmsEvents['routines:updated']) => void): () => void
+    confirmationPending(cb: (e: PendingConfirmation) => void): () => void
+    confirmationDecided(
+      cb: (e: ArmsEvents['gateway:confirmation:decided']) => void
+    ): () => void
+    toolCalled(cb: (e: ToolCallRecord) => void): () => void
   }
 }
 

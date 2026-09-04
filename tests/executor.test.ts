@@ -68,8 +68,11 @@ beforeEach(() => {
   executor = new SkillExecutor({ registry, runs, config: h.config, bus, spawner: fake.spawner })
 })
 
-afterEach(() => {
+afterEach(async () => {
   executor.stop()
+  // The log write is fire-and-forget by design, so drain it before the temp
+  // directory is removed.
+  await runs.flush()
   h.db.close()
   h.cleanup()
 })

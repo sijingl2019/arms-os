@@ -17,13 +17,23 @@ export const CH = {
   routinesRemove: 'routines:remove',
   routinesExport: 'routines:export',
   systemStatus: 'system:status',
+  gatewayStatus: 'gateway:status',
+  gatewayReload: 'gateway:reload',
+  gatewayToolCalls: 'gateway:tool-calls',
+  confirmationsPending: 'confirmations:pending',
+  confirmationsHistory: 'confirmations:history',
+  confirmationsApprove: 'confirmations:approve',
+  confirmationsReject: 'confirmations:reject',
 
   // main -> renderer events
   eventRunStarted: 'event:run-started',
   eventRunChunk: 'event:run-chunk',
   eventRunCompleted: 'event:run-completed',
   eventSkillsIndexed: 'event:skills-indexed',
-  eventRoutinesUpdated: 'event:routines-updated'
+  eventRoutinesUpdated: 'event:routines-updated',
+  eventConfirmationPending: 'event:confirmation-pending',
+  eventConfirmationDecided: 'event:confirmation-decided',
+  eventToolCalled: 'event:tool-called'
 } as const
 
 export type Channel = (typeof CH)[keyof typeof CH]
