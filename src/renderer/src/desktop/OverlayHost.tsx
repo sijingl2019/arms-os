@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import type { PanelId } from '../routes'
+import { PANELS, type PanelId } from '../routes'
 import { Icon } from './icons'
 
 /**
@@ -54,14 +54,16 @@ export interface OverlayHostProps {
 }
 
 export function OverlayHost({ panel, onClose, children }: OverlayHostProps): React.JSX.Element {
+  const label = PANELS.find((p) => p.id === panel)?.label ?? panel
+
   return (
-    <div className="overlay" role="dialog" aria-label={panel}>
+    <div className="overlay" role="dialog" aria-label={label}>
       <header className="overlay-bar">
         <button type="button" className="ghost" onClick={onClose}>
           <Icon name="home" size={16} />
           返回桌面
         </button>
-        <h2>{panel}</h2>
+        <h2>{label}</h2>
         <span className="spacer" />
         <span className="status-line">Esc 返回</span>
       </header>

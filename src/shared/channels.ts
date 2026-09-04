@@ -32,6 +32,7 @@ export const CH = {
   memoryRefresh: 'memory:refresh',
   memoryWriteRouter: 'memory:write-router',
   memoryOpen: 'memory:open',
+  agentsList: 'agents:list',
   gitStatus: 'git:status',
   windowMinimize: 'window:minimize',
   windowMaximize: 'window:maximize',

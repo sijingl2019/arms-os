@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { SystemStatus } from '@shared/types'
 import { Desktop } from './desktop/Desktop'
 import { Dock } from './desktop/Dock'
 import { OverlayHost } from './desktop/OverlayHost'
@@ -8,8 +7,8 @@ import { GatewayPanel } from './panels/GatewayPanel'
 import { MemoryPanel } from './panels/MemoryPanel'
 import { RoutinesPanel } from './panels/RoutinesPanel'
 import { RunsPanel } from './panels/RunsPanel'
+import { SettingsPanel } from './panels/SettingsPanel'
 import { SkillsPanel } from './panels/SkillsPanel'
-import { SystemPanel } from './panels/SystemPanel'
 import type { PanelId, Route } from './routes'
 
 /**
@@ -19,27 +18,22 @@ import type { PanelId, Route } from './routes'
  */
 export function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>(null)
-  const [status, setStatus] = useState<SystemStatus | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState(0)
 
-  const refreshStatus = useCallback(() => {
-    void window.arms.system.status().then(setStatus)
+  const refreshApprovals = useCallback(() => {
     void window.arms.confirmations.pending().then((p) => setPendingApprovals(p.length))
   }, [])
 
   useEffect(() => {
-    refreshStatus()
-    // Anything that changes counts should refresh the Dock badge and the
-    // System panel's numbers.
+    refreshApprovals()
+    // The Dock's Gateway badge is the only shell-level state; each panel and
+    // widget subscribes to whatever else it needs.
     const offs = [
-      window.arms.on.skillsIndexed(refreshStatus),
-      window.arms.on.routinesUpdated(refreshStatus),
-      window.arms.on.runCompleted(refreshStatus),
-      window.arms.on.confirmationPending(refreshStatus),
-      window.arms.on.confirmationDecided(refreshStatus)
+      window.arms.on.confirmationPending(refreshApprovals),
+      window.arms.on.confirmationDecided(refreshApprovals)
     ]
     return () => offs.forEach((off) => off())
-  }, [refreshStatus])
+  }, [refreshApprovals])
 
   useEffect(() => {
     if (route === null) return
@@ -71,7 +65,7 @@ export function App(): React.JSX.Element {
           {route === 'Runs' && <RunsPanel />}
           {route === 'Memory' && <MemoryPanel />}
           {route === 'Gateway' && <GatewayPanel />}
-          {route === 'System' && <SystemPanel status={status} onRefresh={refreshStatus} />}
+          {route === 'Settings' && <SettingsPanel />}
         </OverlayHost>
       )}
 

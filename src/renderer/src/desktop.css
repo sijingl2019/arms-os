@@ -7,13 +7,10 @@
   position: relative;
   height: 100vh;
   overflow: hidden;
-  /* The wallpaper. Two off-centre glows over near-black, so the brain in the
-     middle sits in a lit space rather than on a flat backdrop. */
-  background:
-    radial-gradient(1100px 700px at 18% 12%, rgba(56, 96, 190, 0.22), transparent 60%),
-    radial-gradient(900px 620px at 84% 82%, rgba(126, 72, 190, 0.18), transparent 62%),
-    radial-gradient(700px 700px at 50% 45%, rgba(30, 70, 140, 0.16), transparent 70%),
-    #070a10;
+  /* Off-centre glows over a deep ground, so the cloud in the middle sits in a
+     lit space rather than on a flat backdrop. Defined in theme.css so the light
+     theme can swap the whole stack. */
+  background: var(--wallpaper);
 }
 
 /* ------------------------------------------------------------ window chrome */
@@ -60,12 +57,12 @@
   padding: 0;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
   color: var(--muted);
 }
 
 .win-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover);
   border-color: transparent;
   color: var(--text);
 }
@@ -100,11 +97,11 @@
   display: flex;
   flex-direction: column;
   padding: 12px 14px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--glass-line);
   border-radius: 16px;
-  background: rgba(20, 26, 35, 0.55);
+  background: var(--glass);
   backdrop-filter: blur(16px) saturate(130%);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -166,7 +163,7 @@
   align-items: center;
   gap: 7px;
   padding: 4px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--glass-line);
   color: var(--text);
 }
 
@@ -226,7 +223,7 @@
 
 .ghost:hover:not(:disabled) {
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -315,11 +312,11 @@
   display: flex;
   flex-direction: column;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--glass-edge);
   border-radius: 16px;
-  background: rgba(16, 21, 29, 0.9);
+  background: var(--glass-strong);
   backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-lift);
 }
 
 .search-field {
@@ -368,7 +365,7 @@
 
 .search-results li button:hover:not(:disabled) {
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover);
 }
 
 .hit-title {
@@ -394,7 +391,7 @@
   flex-direction: column;
   /* Clears the drag strip at the top and the Dock at the bottom. */
   padding: 40px 0 104px;
-  background: rgba(8, 11, 16, 0.86);
+  background: var(--scrim);
   backdrop-filter: blur(12px);
 }
 
@@ -418,6 +415,114 @@
   padding: 16px;
 }
 
+/* --------------------------------------------------------------- settings */
+
+.settings-split {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+}
+
+.settings-nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+}
+
+.settings-nav-item:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--hover);
+}
+
+.settings-nav-item.on {
+  background: rgba(76, 154, 255, 0.14);
+  border-color: rgba(76, 154, 255, 0.3);
+}
+
+.settings-nav-item .muted {
+  font-size: 11px;
+}
+
+.settings-panel {
+  min-width: 0;
+  max-width: 780px;
+}
+
+.settings-h {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.settings-note {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.settings-panel section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-panel .label {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The environment variable that owns a read-only value. */
+.env-note {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.agent-list,
+.root-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.agent-list li,
+.root-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.agent-list li:first-child,
+.root-list li:first-child {
+  border-top: none;
+}
+
+.agent-list .tag {
+  margin-left: 6px;
+}
+
 /* ------------------------------------------------------------------- dock */
 
 .dock {
@@ -430,18 +535,18 @@
   align-items: center;
   gap: 4px;
   padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--glass-edge);
   border-radius: 20px;
-  background: rgba(18, 24, 33, 0.5);
+  background: var(--glass);
   backdrop-filter: blur(22px) saturate(150%);
-  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lift);
 }
 
 .dock-sep {
   width: 1px;
   height: 26px;
   margin: 0 4px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--glass-edge);
 }
 
 .dock-item {
@@ -464,7 +569,7 @@
 .dock-item:hover:not(:disabled) {
   transform: translateY(-7px) scale(1.1);
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -488,9 +593,9 @@
   position: absolute;
   bottom: calc(100% + 12px);
   padding: 3px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--glass-edge);
   border-radius: 8px;
-  background: rgba(18, 24, 33, 0.92);
+  background: var(--glass-strong);
   color: var(--text);
   font-size: 11px;
   white-space: nowrap;

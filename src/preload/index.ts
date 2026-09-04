@@ -60,6 +60,9 @@ const bridge: ArmsOsBridge = {
     writeRouter: (dryRun?: boolean) => ipcRenderer.invoke(CH.memoryWriteRouter, dryRun),
     open: (path: string) => ipcRenderer.invoke(CH.memoryOpen, path)
   },
+  agents: {
+    list: () => ipcRenderer.invoke(CH.agentsList)
+  },
   git: {
     status: () => ipcRenderer.invoke(CH.gitStatus)
   },

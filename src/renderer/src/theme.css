@@ -11,7 +11,81 @@
   --bad: #f85149;
   --radius: 10px;
 
+  /* The four ARMS layers. The particle cloud reads these through
+     getComputedStyle, so a retheme carries the centrepiece with it. */
+  --tone-apps: #4da3ff;
+  --tone-routines: #ff6a1f;
+  --tone-memory: #c084fc;
+  --tone-skills: #3ecf8e;
+
+  /* The cloud's outer layer, as rgb triplets so the canvas can vary alpha. */
+  --core-shell: 66, 142, 255;
+  --core-ring: 120, 200, 255;
+  --core-orbit: 90, 170, 255;
+  --core-particle: 210, 240, 255;
+  --core-trail: 140, 215, 255;
+  /* Added to every cloud dot's HSL lightness; negative darkens for a light UI. */
+  --core-lightness-shift: 0;
+
+  /* Desktop surfaces. Frosted panels need their own colours, not --panel. */
+  --wallpaper:
+    radial-gradient(1100px 700px at 18% 12%, rgba(56, 96, 190, 0.22), transparent 60%),
+    radial-gradient(900px 620px at 84% 82%, rgba(126, 72, 190, 0.18), transparent 62%),
+    radial-gradient(700px 700px at 50% 45%, rgba(30, 70, 140, 0.16), transparent 70%), #070a10;
+  --glass: rgba(20, 26, 35, 0.55);
+  --glass-strong: rgba(16, 21, 29, 0.9);
+  --glass-line: rgba(255, 255, 255, 0.07);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --hover: rgba(255, 255, 255, 0.08);
+  --shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 12px 44px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(8, 11, 16, 0.86);
+
   color-scheme: dark;
+}
+
+/**
+ * Light theme. Only the tokens change - every rule below reads them, so nothing
+ * else in the stylesheet knows which theme is active.
+ */
+:root[data-theme='light'] {
+  --bg: #f3f5f9;
+  --panel: #ffffff;
+  --panel-2: #eaeef5;
+  --line: #d5dce7;
+  --text: #16202e;
+  --muted: #5b6879;
+  --accent: #2563eb;
+  --ok: #1f9d55;
+  --warn: #b7791f;
+  --bad: #d33a32;
+
+  --tone-apps: #2b7fd4;
+  --tone-routines: #e2560e;
+  --tone-memory: #8b4fd6;
+  --tone-skills: #1f9d63;
+
+  --core-shell: 40, 100, 200;
+  --core-ring: 60, 120, 200;
+  --core-orbit: 70, 120, 190;
+  --core-particle: 40, 80, 150;
+  --core-trail: 70, 130, 200;
+  --core-lightness-shift: -16;
+
+  --wallpaper:
+    radial-gradient(1100px 700px at 18% 12%, rgba(120, 165, 240, 0.35), transparent 60%),
+    radial-gradient(900px 620px at 84% 82%, rgba(190, 160, 235, 0.28), transparent 62%),
+    radial-gradient(700px 700px at 50% 45%, rgba(150, 190, 240, 0.3), transparent 70%), #eef1f7;
+  --glass: rgba(255, 255, 255, 0.7);
+  --glass-strong: rgba(255, 255, 255, 0.94);
+  --glass-line: rgba(22, 32, 46, 0.09);
+  --glass-edge: rgba(22, 32, 46, 0.12);
+  --hover: rgba(22, 32, 46, 0.06);
+  --shadow: 0 8px 26px rgba(40, 60, 95, 0.14);
+  --shadow-lift: 0 12px 44px rgba(40, 60, 95, 0.2);
+  --scrim: rgba(240, 243, 249, 0.88);
+
+  color-scheme: light;
 }
 
 * {

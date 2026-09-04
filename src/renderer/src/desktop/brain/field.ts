@@ -6,7 +6,7 @@
  * keeps the motion reading as flow along a ring rather than as drift.
  */
 
-import { mulberry32 } from './points'
+import { seededRandom } from './cloud'
 
 export interface Orbit {
   radiusX: number
@@ -46,7 +46,7 @@ export function createOrbits(radius: number): Orbit[] {
 }
 
 export function createField(orbits: readonly Orbit[], perOrbit: number, seed = 0xf1e1d): FieldParticle[] {
-  const random = mulberry32(seed)
+  const random = seededRandom(seed)
   const particles: FieldParticle[] = []
 
   for (let orbit = 0; orbit < orbits.length; orbit += 1) {

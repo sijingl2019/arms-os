@@ -13,7 +13,7 @@ export type IconName =
   | 'runs'
   | 'memory'
   | 'gateway'
-  | 'system'
+  | 'settings'
   | 'apps'
   | 'calendar'
   | 'git'
@@ -36,7 +36,7 @@ const PATHS: Record<IconName, readonly string[]> = {
     'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'
   ],
   gateway: ['M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z', 'M9 12l2 2 4-4'],
-  system: ['M4 7h11', 'M19 7h1', 'M4 17h11', 'M19 17h1', 'M17 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0z', 'M11 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0z'],
+  settings: ['M4 7h11', 'M19 7h1', 'M4 17h11', 'M19 17h1', 'M17 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0z', 'M11 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0z'],
   apps: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'],
   calendar: ['M4 6h16v14H4z', 'M4 10h16', 'M8 3v4', 'M16 3v4'],
   git: [

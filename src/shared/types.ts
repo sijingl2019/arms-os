@@ -278,6 +278,10 @@ export interface ArmsOsBridge {
     /** Hand an indexed file to the OS default app. Rejects paths outside the roots. */
     open(path: string): Promise<OpenResult>
   }
+  agents: {
+    /** Probe each agent CLI for availability. Runs `--version`, so it is slow-ish. */
+    list(): Promise<AgentInfo[]>
+  }
   /** Read-only view of the workspace repository, for the desktop's Git widget. */
   git: {
     status(): Promise<GitStatus>
@@ -314,6 +318,22 @@ export interface ArmsOsBridge {
     /** Fires for system gestures (double-click, Win+Up, snap) too, not just our button. */
     windowMaximized(cb: (maximized: boolean) => void): () => void
   }
+}
+
+/* ---------------------------------------------------------------- agents */
+
+/** One agent CLI, as Settings shows it. */
+export interface AgentInfo {
+  id: AgentId
+  label: string
+  /** The executable name, so a missing CLI names what to install. */
+  command: string
+  isDefault: boolean
+  available: boolean
+  /** First line of `--version` output, when the CLI answered. */
+  version: string | null
+  /** Why it is unavailable, when it did not. */
+  reason: string | null
 }
 
 /* ------------------------------------------------------------------- git */

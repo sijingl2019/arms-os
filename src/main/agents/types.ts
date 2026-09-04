@@ -18,6 +18,12 @@ export interface CommandLine {
 export interface AgentRuntime {
   id: AgentId
   /**
+   * The executable this runtime spawns. `build` puts it on the CommandLine too;
+   * having it here as well is what lets Settings probe for the CLI without
+   * inventing a fake skill to build a command from.
+   */
+  readonly command: string
+  /**
    * True when this runtime inlines SKILL.md into the prompt instead of letting
    * the CLI resolve the skill itself. The executor reads the file only then.
    */

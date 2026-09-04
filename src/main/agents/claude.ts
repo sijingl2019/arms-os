@@ -9,6 +9,7 @@ import type { AgentRuntime, BuildContext, CommandLine } from './types'
  */
 export const claudeRuntime: AgentRuntime = {
   id: 'claude',
+  command: 'claude',
   needsSkillBody: false,
 
   build(ctx: BuildContext): CommandLine {
@@ -20,6 +21,6 @@ export const claudeRuntime: AgentRuntime = {
     if (ctx.model) args.push('--model', ctx.model)
     if (ctx.effort) args.push('--effort', ctx.effort)
 
-    return { command: 'claude', args }
+    return { command: claudeRuntime.command, args }
   }
 }

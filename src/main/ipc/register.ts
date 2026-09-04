@@ -11,6 +11,7 @@ import type {
   SystemStatus,
   SystemTaskExport
 } from '@shared/types'
+import { probeAgents } from '../agents/probe'
 import type { ArmsCore } from '../core'
 import { readGitStatus } from '../git/status'
 import { writeRouterFiles } from '../memory/router'
@@ -161,6 +162,8 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     return shell.openPath(target)
   })
 
+  ipcMain.handle(CH.agentsList, () => probeAgents(core.config.defaultAgent))
+
   ipcMain.handle(CH.gitStatus, () => readGitStatus(core.config.workspaceRoot))
 
   // Frameless windows have no native buttons; these are the replacements.
@@ -237,6 +240,7 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.memoryRefresh,
     CH.memoryWriteRouter,
     CH.memoryOpen,
+    CH.agentsList,
     CH.gitStatus,
     CH.windowMinimize,
     CH.windowMaximize,

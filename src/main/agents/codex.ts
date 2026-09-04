@@ -7,6 +7,7 @@ import type { AgentRuntime, BuildContext, CommandLine } from './types'
  */
 export const codexRuntime: AgentRuntime = {
   id: 'codex',
+  command: 'codex',
   needsSkillBody: true,
 
   build(ctx: BuildContext): CommandLine {
@@ -27,6 +28,6 @@ export const codexRuntime: AgentRuntime = {
     const args = ['exec', sections.join('\n')]
     if (ctx.model) args.push('--model', ctx.model)
 
-    return { command: 'codex', args }
+    return { command: codexRuntime.command, args }
   }
 }

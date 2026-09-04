@@ -5,7 +5,7 @@ import type { IconName } from './desktop/icons'
  * router and no URL, because a single-window desktop app has neither history
  * nor deep links to serve.
  */
-export const PANEL_IDS = ['Skills', 'Routines', 'Runs', 'Memory', 'Gateway', 'System'] as const
+export const PANEL_IDS = ['Skills', 'Routines', 'Runs', 'Memory', 'Gateway', 'Settings'] as const
 
 export type PanelId = (typeof PANEL_IDS)[number]
 
@@ -25,5 +25,5 @@ export const PANELS: readonly PanelMeta[] = [
   { id: 'Runs', icon: 'runs', label: 'Runs' },
   { id: 'Memory', icon: 'memory', label: 'Memory' },
   { id: 'Gateway', icon: 'gateway', label: 'Gateway' },
-  { id: 'System', icon: 'system', label: 'System' }
+  { id: 'Settings', icon: 'settings', label: '设置' }
 ]
