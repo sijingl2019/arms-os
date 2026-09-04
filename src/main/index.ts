@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
+import { CH } from '@shared/channels'
 import { loadConfig } from './config'
 import { createCore, type ArmsCore } from './core'
 import { createElectronVault } from './gateway/electronVault'
@@ -36,6 +37,9 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    // The desktop shell draws its own title bar and window buttons; a native
+    // frame would sit on top of the wallpaper and break the metaphor.
+    frame: false,
     backgroundColor: '#0e1116',
     title: 'ARMS Agentic OS',
     webPreferences: {
@@ -48,7 +52,34 @@ function createWindow(): BrowserWindow {
     }
   })
 
+  // The desktop metaphor only works at full size: the six widgets and the
+  // brain need the room. The width/height above stay as the restore size.
+  win.maximize()
+
   win.once('ready-to-show', () => win.show())
+
+  // The user can also maximize with a system gesture (double-click on the drag
+  // strip, Win+Up, edge snap), so the renderer's button has to follow the
+  // window rather than its own last click.
+  const sendMaximized = (maximized: boolean): void => {
+    if (!win.isDestroyed()) win.webContents.send(CH.eventWindowMaximized, maximized)
+  }
+  win.on('maximize', () => sendMaximized(true))
+  win.on('unmaximize', () => sendMaximized(false))
+  // The window is maximized before the renderer exists, so it would otherwise
+  // miss that first event and draw the wrong button.
+  win.webContents.on('did-finish-load', () => sendMaximized(win.isMaximized()))
+
+  // Removing the application menu also removes its DevTools accelerator, so in
+  // development put F12 back explicitly.
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        win.webContents.toggleDevTools()
+        event.preventDefault()
+      }
+    })
+  }
 
   win.on('close', (event) => {
     if (quitting) return
@@ -146,6 +177,9 @@ function buildTray(): Tray {
 app.on('second-instance', showWindow)
 
 void app.whenReady().then(async () => {
+  // No native menu bar: the Dock and the tray are the only chrome this app has.
+  Menu.setApplicationMenu(null)
+
   // safeStorage only exists here, in the main process; the CLI deliberately
   // gets a vault that refuses rather than a weaker fallback.
   const config = loadConfig()

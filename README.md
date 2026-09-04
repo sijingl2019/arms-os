@@ -91,7 +91,9 @@ src/
     executor/            SkillExecutor
     core.ts              组合根
   preload/index.ts       contextBridge 暴露的唯一通道
-  renderer/src/          React Dashboard：Skills / Routines / Runs / System
+  renderer/src/          React 桌面外壳
+    desktop/             桌面：控件 / 粒子大脑 / Dock / 窗口按钮 / 知识库搜索
+    panels/              Skills / Routines / Runs / Memory / Gateway / System
 scripts/arms.ts          验证用 CLI
 ```
 

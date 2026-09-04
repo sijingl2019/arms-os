@@ -32,47 +32,6 @@ pre,
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-}
-
-.brand {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.tab {
-  padding: 5px 12px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-}
-
-.tab[aria-selected='true'] {
-  background: var(--panel-2);
-  border-color: var(--line);
-  color: var(--text);
-}
-
 .spacer {
   flex: 1;
 }
@@ -80,12 +39,6 @@ pre,
 .status-line {
   color: var(--muted);
   font-size: 12px;
-}
-
-.body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px;
 }
 
 .grid {

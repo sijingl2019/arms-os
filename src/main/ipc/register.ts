@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { ipcMain, shell, type BrowserWindow } from 'electron'
 import { CH } from '@shared/channels'
 import type {
@@ -11,6 +12,7 @@ import type {
   SystemTaskExport
 } from '@shared/types'
 import type { ArmsCore } from '../core'
+import { readGitStatus } from '../git/status'
 import { writeRouterFiles } from '../memory/router'
 import { planSystemTask } from '../routines/systemTask'
 import { writeSkillsIndex } from '../skills/indexFile'
@@ -27,6 +29,16 @@ export interface IpcDeps {
 function workspaceSkillsDir(core: ArmsCore): string {
   const workspace = core.config.scanRoots.find((r) => r.source === 'workspace')
   return workspace?.dir ?? core.config.scanRoots[0]?.dir ?? core.config.workspaceRoot
+}
+
+/**
+ * True when `target` sits inside `root`. The renderer supplies the path it got
+ * back from a search hit, but a compromised renderer could supply anything, so
+ * `memory:open` will only hand the OS a file we actually indexed.
+ */
+function isInside(root: string, target: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(target))
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
 }
 
 function buildStatus(core: ArmsCore): SystemStatus {
@@ -59,6 +71,9 @@ function buildStatus(core: ArmsCore): SystemStatus {
  * so a reload cannot end up with two sets of listeners.
  */
 export function registerIpc({ core, windows }: IpcDeps): () => void {
+  const windowOf = (event: Electron.IpcMainInvokeEvent): BrowserWindow | undefined =>
+    windows().find((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)
+
   const broadcast = (channel: string, payload: unknown): void => {
     for (const win of windows()) {
       if (!win.isDestroyed()) win.webContents.send(channel, payload)
@@ -138,6 +153,33 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     })
   })
 
+  ipcMain.handle(CH.memoryOpen, async (_e, target: string) => {
+    if (typeof target !== 'string' || target === '') return 'no path given'
+    if (!core.config.memoryRoots.some((root) => isInside(root, target))) {
+      return 'path is outside the indexed knowledge base'
+    }
+    return shell.openPath(target)
+  })
+
+  ipcMain.handle(CH.gitStatus, () => readGitStatus(core.config.workspaceRoot))
+
+  // Frameless windows have no native buttons; these are the replacements.
+  ipcMain.handle(CH.windowMinimize, (event) => {
+    windowOf(event)?.minimize()
+  })
+  ipcMain.handle(CH.windowMaximize, (event) => {
+    const win = windowOf(event)
+    if (!win) return false
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+    return win.isMaximized()
+  })
+  ipcMain.handle(CH.windowClose, (event) => {
+    // `close` is intercepted in main/index.ts and turned into `hide`, which is
+    // what keeps the Routine Scheduler alive. Quitting stays tray-menu-only.
+    windowOf(event)?.close()
+  })
+
   ipcMain.handle(CH.confirmationsPending, () => core.gateway.confirmations.listPending())
   ipcMain.handle(CH.confirmationsHistory, (_e, limit?: number) =>
     core.gateway.confirmations.history(limit ?? 50)
@@ -193,7 +235,12 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.memorySearch,
     CH.memoryStatus,
     CH.memoryRefresh,
-    CH.memoryWriteRouter
+    CH.memoryWriteRouter,
+    CH.memoryOpen,
+    CH.gitStatus,
+    CH.windowMinimize,
+    CH.windowMaximize,
+    CH.windowClose
   ]
 
   return () => {

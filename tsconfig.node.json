@@ -21,13 +21,16 @@
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"],
-      "@main/*": ["src/main/*"]
+      "@main/*": ["src/main/*"],
+      "@renderer/*": ["src/renderer/src/*"]
     }
   },
   "include": [
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "src/renderer/src/desktop/brain/points.ts",
+    "src/renderer/src/desktop/brain/field.ts",
     "scripts/**/*",
     "tests/**/*",
     "electron.vite.config.ts",

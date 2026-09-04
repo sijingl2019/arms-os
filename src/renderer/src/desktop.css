@@ -1,0 +1,554 @@
+/**
+ * The desktop shell: frameless chrome, widget columns, the brain stage, the
+ * Dock and the panel overlay. Panel internals keep using theme.css.
+ */
+
+.app {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  /* The wallpaper. Two off-centre glows over near-black, so the brain in the
+     middle sits in a lit space rather than on a flat backdrop. */
+  background:
+    radial-gradient(1100px 700px at 18% 12%, rgba(56, 96, 190, 0.22), transparent 60%),
+    radial-gradient(900px 620px at 84% 82%, rgba(126, 72, 190, 0.18), transparent 62%),
+    radial-gradient(700px 700px at 50% 45%, rgba(30, 70, 140, 0.16), transparent 70%),
+    #070a10;
+}
+
+/* ------------------------------------------------------------ window chrome */
+
+/* Chrome is an app surface, not a document: dragging a Dock label or a widget
+   heading should never start a text selection. Panel content stays selectable,
+   because run output and paths are things people copy. */
+.desktop,
+.dock,
+.window-controls,
+.drag-strip {
+  user-select: none;
+}
+
+/* `frame: false` removed the title bar, so this strip is the only thing the
+   window can be dragged by. It sits above the overlay so dragging keeps
+   working while a panel is open. */
+.drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 30;
+  -webkit-app-region: drag;
+}
+
+.window-controls {
+  position: absolute;
+  top: 7px;
+  right: 12px;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+  /* Sits on top of the drag region, which would otherwise eat the clicks. */
+  -webkit-app-region: no-drag;
+}
+
+.win-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.win-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.win-btn.danger:hover:not(:disabled) {
+  background: #d33a32;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------- desktop */
+
+.desktop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(228px, 300px) 1fr minmax(228px, 300px);
+  gap: 20px;
+  /* Top gap clears the drag strip, bottom gap clears the Dock. */
+  padding: 52px 22px 116px;
+}
+
+.widget-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.widget {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(20, 26, 35, 0.55);
+  backdrop-filter: blur(16px) saturate(130%);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.widget-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.widget-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.widget-lede {
+  margin: 10px 0 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.widget-error {
+  margin: 10px 0 0;
+  color: var(--bad);
+  font-size: 12px;
+}
+
+.widget-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.widget-placeholder .tag {
+  align-self: flex-start;
+}
+
+.widget-placeholder p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.widget-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.widget-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.widget-list li:first-child {
+  border-top: none;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.branch {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+.dot.warn {
+  background: var(--warn);
+}
+.dot.bad {
+  background: var(--bad);
+}
+
+/* Chromeless buttons: theme.css gives every button a border and a panel
+   background, which is wrong everywhere on the desktop. */
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--muted);
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.ghost.icon-only {
+  padding: 4px;
+}
+
+.linkish {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.linkish:hover:not(:disabled) {
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------------ brain stage */
+
+.stage {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brain-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A round hit area over the brain, so clicking the glow opens search but
+   clicking the empty corners of the stage does not. */
+.brain-hit {
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  aspect-ratio: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4%;
+  border: none;
+  border-radius: 50%;
+  background: none;
+}
+
+.brain-hit:hover:not(:disabled) {
+  border-color: transparent;
+}
+
+.brain-hint {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.brain-hit:hover .brain-hint,
+.brain-hit:focus-visible .brain-hint {
+  opacity: 1;
+}
+
+/* ----------------------------------------------------------------- search */
+
+.search-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-box {
+  width: min(560px, 94%);
+  max-height: 78%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(16, 21, 29, 0.9);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+
+.search-field input {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 15px;
+}
+
+.search-field input:focus {
+  outline: none;
+}
+
+.search-note {
+  margin: 8px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.search-results {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.search-results li button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+}
+
+.search-results li button:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hit-title {
+  font-weight: 600;
+}
+
+.hit-path,
+.hit-snippet {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- overlay */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  /* Clears the drag strip at the top and the Dock at the bottom. */
+  padding: 40px 0 104px;
+  background: rgba(8, 11, 16, 0.86);
+  backdrop-filter: blur(12px);
+}
+
+.overlay-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.overlay-bar h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.overlay-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* ------------------------------------------------------------------- dock */
+
+.dock {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  background: rgba(18, 24, 33, 0.5);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.5);
+}
+
+.dock-sep {
+  width: 1px;
+  height: 26px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dock-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: none;
+  color: var(--muted);
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.dock-item:hover:not(:disabled) {
+  transform: translateY(-7px) scale(1.1);
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.dock-item.active {
+  color: var(--text);
+  background: rgba(76, 154, 255, 0.16);
+}
+
+/* The running-app indicator, same idea as the dot under a macOS Dock icon. */
+.dock-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dock-label {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(18, 24, 33, 0.92);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.dock-item:hover .dock-label,
+.dock-item:focus-visible .dock-label {
+  opacity: 1;
+}
+
+.dock-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 1180px) {
+  .desktop {
+    grid-template-columns: minmax(200px, 250px) 1fr minmax(200px, 250px);
+    gap: 14px;
+    padding: 48px 14px 108px;
+  }
+}
+
+@media (max-width: 980px) {
+  .widget {
+    padding: 10px 12px;
+    font-size: 11px;
+  }
+
+  .widget-head h3 {
+    font-size: 12px;
+  }
+}
+
+/* The brain is the one thing here that moves on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .dock-item,
+  .dock-label,
+  .brain-hint {
+    transition: none;
+  }
+
+  .dock-item:hover:not(:disabled) {
+    transform: none;
+  }
+}

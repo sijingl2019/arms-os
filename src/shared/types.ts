@@ -275,6 +275,20 @@ export interface ArmsOsBridge {
     refresh(opts?: { force?: boolean; writeRouter?: boolean }): Promise<MemoryIndexResult>
     /** Regenerate router files without a sweep; `dryRun` only plans. */
     writeRouter(dryRun?: boolean): Promise<string[]>
+    /** Hand an indexed file to the OS default app. Rejects paths outside the roots. */
+    open(path: string): Promise<OpenResult>
+  }
+  /** Read-only view of the workspace repository, for the desktop's Git widget. */
+  git: {
+    status(): Promise<GitStatus>
+  }
+  /** Frameless-window controls, since there is no native title bar to use. */
+  window: {
+    minimize(): Promise<void>
+    /** Toggles; resolves with the resulting maximized state. */
+    maximize(): Promise<boolean>
+    /** Hides to the tray - quitting stays a tray-menu-only action. */
+    close(): Promise<void>
   }
   /** The approval queue behind every write-irreversible action (§2.3). */
   confirmations: {
@@ -297,8 +311,42 @@ export interface ArmsOsBridge {
     toolCalled(cb: (e: ToolCallRecord) => void): () => void
     memoryProgress(cb: (e: MemoryIndexProgress) => void): () => void
     memoryCompleted(cb: (e: MemoryIndexResult) => void): () => void
+    /** Fires for system gestures (double-click, Win+Up, snap) too, not just our button. */
+    windowMaximized(cb: (maximized: boolean) => void): () => void
   }
 }
+
+/* ------------------------------------------------------------------- git */
+
+export interface GitCommit {
+  hash: string
+  author: string
+  /** YYYY-MM-DD, already formatted by `git log --date=short`. */
+  date: string
+  subject: string
+}
+
+/**
+ * A snapshot of the workspace repository. Read-only by construction: the widget
+ * offers no writes, so this never goes through the Gateway's Guardrail - that
+ * guards agent-initiated external actions, not the dashboard reading its own
+ * working copy.
+ */
+export interface GitStatus {
+  isRepo: boolean
+  branch: string | null
+  ahead: number
+  behind: number
+  staged: number
+  unstaged: number
+  untracked: number
+  commits: GitCommit[]
+  /** Set when git is missing, times out, or the directory is not a repo. */
+  error: string | null
+}
+
+/** `''` on success; otherwise the reason, so the renderer can show it. */
+export type OpenResult = string
 
 /* --------------------------------------------------------------- gateway */
 

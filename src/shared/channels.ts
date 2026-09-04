@@ -31,6 +31,11 @@ export const CH = {
   memoryStatus: 'memory:status',
   memoryRefresh: 'memory:refresh',
   memoryWriteRouter: 'memory:write-router',
+  memoryOpen: 'memory:open',
+  gitStatus: 'git:status',
+  windowMinimize: 'window:minimize',
+  windowMaximize: 'window:maximize',
+  windowClose: 'window:close',
 
   // main -> renderer events
   eventRunStarted: 'event:run-started',
@@ -42,7 +47,8 @@ export const CH = {
   eventConfirmationDecided: 'event:confirmation-decided',
   eventToolCalled: 'event:tool-called',
   eventMemoryProgress: 'event:memory-progress',
-  eventMemoryCompleted: 'event:memory-completed'
+  eventMemoryCompleted: 'event:memory-completed',
+  eventWindowMaximized: 'event:window-maximized'
 } as const
 
 export type Channel = (typeof CH)[keyof typeof CH]

@@ -57,7 +57,16 @@ const bridge: ArmsOsBridge = {
     status: () => ipcRenderer.invoke(CH.memoryStatus),
     refresh: (opts?: { force?: boolean; writeRouter?: boolean }) =>
       ipcRenderer.invoke(CH.memoryRefresh, opts),
-    writeRouter: (dryRun?: boolean) => ipcRenderer.invoke(CH.memoryWriteRouter, dryRun)
+    writeRouter: (dryRun?: boolean) => ipcRenderer.invoke(CH.memoryWriteRouter, dryRun),
+    open: (path: string) => ipcRenderer.invoke(CH.memoryOpen, path)
+  },
+  git: {
+    status: () => ipcRenderer.invoke(CH.gitStatus)
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke(CH.windowMinimize),
+    maximize: () => ipcRenderer.invoke(CH.windowMaximize),
+    close: () => ipcRenderer.invoke(CH.windowClose)
   },
   confirmations: {
     pending: () => ipcRenderer.invoke(CH.confirmationsPending),
@@ -75,7 +84,8 @@ const bridge: ArmsOsBridge = {
     confirmationDecided: (cb) => subscribe(CH.eventConfirmationDecided, cb),
     toolCalled: (cb) => subscribe(CH.eventToolCalled, cb),
     memoryProgress: (cb) => subscribe(CH.eventMemoryProgress, cb),
-    memoryCompleted: (cb) => subscribe(CH.eventMemoryCompleted, cb)
+    memoryCompleted: (cb) => subscribe(CH.eventMemoryCompleted, cb),
+    windowMaximized: (cb) => subscribe(CH.eventWindowMaximized, cb)
   }
 }
 

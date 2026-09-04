@@ -35,7 +35,7 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 
 ## 代码现状
 
-本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail 中间件链 + 阻塞式审批队列）、**Memory Indexer**（增量索引 + FTS5 trigram 检索 + 路由文件生成）、**托盘常驻的 Electron + React 外壳**（Skills / Routines / Runs / Memory / Gateway / System 六个面板）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
+本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail 中间件链 + 阻塞式审批队列）、**Memory Indexer**（增量索引 + FTS5 trigram 检索 + 路由文件生成）、**托盘常驻的 Electron + React 桌面外壳**（无边框窗口 + 桌面首页：左右六个控件、中央 Canvas 2D 粒子大脑与知识库搜索、底部 Dock；六个面板 Skills / Routines / Runs / Memory / Gateway / System 以全屏覆盖层打开）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
 
 注意：隔壁 `E:\Workspace\agentic-os` 是更早的 Electron MVP（Dashboard、Second Brain 图谱、Skills Deck），本仓库只把它当参考，不修改它。将来接 Electron 外壳时，UI 层可以从那边搬。
 

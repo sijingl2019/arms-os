@@ -7,7 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': r('./src/shared'),
-      '@main': r('./src/main')
+      '@main': r('./src/main'),
+      // The brain's maths lives in the renderer but is plain TypeScript, so it
+      // is unit-tested here alongside the main-process modules.
+      '@renderer': r('./src/renderer/src')
     }
   },
   test: {
