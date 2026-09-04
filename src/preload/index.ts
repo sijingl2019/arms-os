@@ -3,6 +3,7 @@ import { CH } from '@shared/channels'
 import type {
   ArmsOsBridge,
   MemorySearchQuery,
+  NewSkillRequest,
   RoutineInput,
   RunHistoryQuery,
   SkillRunRequest
@@ -27,7 +28,10 @@ const bridge: ArmsOsBridge = {
     refresh: () => ipcRenderer.invoke(CH.skillsRefresh),
     writeIndex: () => ipcRenderer.invoke(CH.skillsWriteIndex),
     run: (req: SkillRunRequest) => ipcRenderer.invoke(CH.skillRun, req),
-    cancel: (runId: string) => ipcRenderer.invoke(CH.skillCancel, runId)
+    cancel: (runId: string) => ipcRenderer.invoke(CH.skillCancel, runId),
+    lint: () => ipcRenderer.invoke(CH.skillsLint),
+    create: (req: NewSkillRequest) => ipcRenderer.invoke(CH.skillsCreate, req),
+    reveal: (id: string) => ipcRenderer.invoke(CH.skillsReveal, id)
   },
   runs: {
     history: (query?: RunHistoryQuery) => ipcRenderer.invoke(CH.runsHistory, query)

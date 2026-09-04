@@ -45,4 +45,5 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 2. ~~接入 Routine Scheduler 持久化调度~~ ✅ 已完成（croner + 持久化 next_run_at + 托盘常驻；另有 `routines export` 生成系统级定时任务作为 L2 逃生舱）
 3. ~~实现 Connector Gateway 的 MCP HTTP Server + Guardrail 中间件雏形~~ ✅ 已完成（风险三档精确到 tool、未标注即最严档、审批改为阻塞式而非文档 §2.3 的占位符轮询；BrowserAdapter 仍只有接口）
 4. ~~Memory Indexer 增量索引优化，解决"Index hit its file cap"的规模问题~~ ✅ 已完成（取消文件上限、流式 walk + 批量写入；5 万文件实测重扫 3.2s、最大卡顿 98ms；FTS5 用 trigram 因为 unicode61 匹配不了中文；暂未上 worker_thread，理由见 README 技术债）
-5. 待补：Skill 市场、"我的 Skill"管理界面
+5. ~~"我的 Skill"管理界面~~ ✅ 已完成：Skill 体检（架构规范 §11 清单机器化 + Gateway §4 两张皮校验）、模板新建、面板健康标记
+6. 待补：**Skill 市场**（从远程仓库拉取 skill 包）。设计文档里只有框图上的一个词，包格式 / 来源信任 / 版本升级都需要先设计再动手

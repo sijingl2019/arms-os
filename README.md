@@ -2,7 +2,7 @@
 
 基于 Applications / Routines / Memory / Skills 四层框架的个人智能体操作系统。设计文档见仓库根目录的三份 `*_v1.md`，模块规格见 `docs/superpowers/specs/`。
 
-当前已实现：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail）、**Memory Indexer**（增量索引 + FTS5 检索 + 路由文件生成），以及托盘常驻的 **Electron + React 外壳**。
+当前已实现：**Skill Registry & Executor**、**Skill 体检**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail）、**Memory Indexer**（增量索引 + FTS5 检索 + 路由文件生成），以及托盘常驻的 **Electron + React 外壳**。
 
 ## 快速开始
 
@@ -38,6 +38,8 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 | `arms skills show <id>` | 展开单个 Skill，含三段护栏 |
 | `arms skills match <text>` | 按 `triggers` 把自由文本解析成 Skill |
 | `arms skills index [dest]` | 生成 `SKILLS_INDEX.md`（架构规范 §4.3） |
+| `arms skills doctor [--all] [--strict]` | Skill 体检；`--strict` 有 error 时退出码 1 |
+| `arms skills new <id>` | 从模板新建 Skill（护栏章节已就位） |
 | `arms run <id> [options]` | headless 执行一个 Skill |
 | `arms runs [--skill <id>] [--routine <id>] [--limit N]` | 最近的运行记录 |
 | `arms routines list` | 列出 routine 及下次触发时间 |
@@ -126,6 +128,22 @@ skill:run:completed
 skills:index:updated
 ```
 
+## Skill 体检
+
+把架构规范 §11 的上线前自检清单机器化，外加 Connector Gateway 设计文档 §4 点名要做的那个校验脚本。
+
+```bash
+npx tsx --tsconfig tsconfig.node.json scripts/arms.ts skills doctor --strict
+```
+
+规则分三级。`error`：没声明「绝对不能做的事」、触发词冲突、**依赖的 connector 含不可逆动作却没声明任何需要确认的动作**。`warning`：没有 description、依赖了 Application 却没声明确认项、声称有高风险动作但 connector 全是 read-only。`info`：没有触发词、超过 150 行该拆 Skill Tree、依赖的 connector 在 manifest 里找不到。
+
+**核心是那条"两张皮"校验**（Gateway 文档 §4）：Skill 说自己会小心，Gateway 却没设防——或者反过来。两个方向都查。Gateway 始终会拦截，所以这不是安全兜底，而是让文档与实际风险不再脱节。
+
+默认只体检 `workspace` 来源的 Skill：用户级和插件 Skill 从来不是照这套规范写的，也不归你改；`--all` 可以全查。`--strict` 让它能当 pre-commit 闸门用。
+
+`arms skills new <id>` 从架构规范 §4.1 模板生成 SKILL.md，三个护栏章节预先就位——需要靠记性补的章节就是会被跳过的章节。
+
 ## Memory Indexer
 
 知识库根由 `ARMS_MEMORY_ROOTS` 配置，**独立于 `workspaceRoot`** —— 几万文件的知识库通常不在代码工作区里。
@@ -194,4 +212,6 @@ codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
 11. 限流与熔断是进程内内存状态，重启即清零
 12. Memory Indexer 跑在主进程里，没有用设计文档 §8 建议的 `worker_thread`。实测最大卡顿 98ms（且只在全量重建时出现），renderer 是独立进程不受影响，代价只是 IPC 延迟——为此引入独立 DB 连接和 WAL 竞争暂时不划算。若将来全量重建变频繁再补
 13. 只索引正文前 8KB，长文档的尾部搜不到
+14. Skill 体检里「依赖的 Application」是自由文本，靠在其中匹配已知 connector id 来关联；写法完全不含 id 时不会触发交叉校验（因此报 info 而非 error）
+15. "Skill 市场"（远程仓库拉取 skill 包）未做：设计文档里只有框图上的一个词，包格式、来源信任、版本升级都还没有规格
 14. 设计文档 §7 把 Gateway 调用记在 `runs` 表，实现里另建了 `tool_calls` 表——两者列几乎不重叠（run 有命令行/退出码/流式输出，tool call 有 connector/JSON 参数/风险判定），合表会让任一种行有一半是 NULL

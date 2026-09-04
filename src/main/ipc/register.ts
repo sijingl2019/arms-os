@@ -1,7 +1,8 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, shell, type BrowserWindow } from 'electron'
 import { CH } from '@shared/channels'
 import type {
   MemoryIndexResult,
+  NewSkillRequest,
   MemorySearchQuery,
   RoutineInput,
   RunHistoryQuery,
@@ -13,11 +14,19 @@ import type { ArmsCore } from '../core'
 import { writeRouterFiles } from '../memory/router'
 import { planSystemTask } from '../routines/systemTask'
 import { writeSkillsIndex } from '../skills/indexFile'
+import { lintSkills } from '../skills/lint'
+import { createSkill } from '../skills/scaffold'
 
 export interface IpcDeps {
   core: ArmsCore
   /** Live windows to broadcast events to. */
   windows(): BrowserWindow[]
+}
+
+/** New skills belong in the workspace root, never in the shared user library. */
+function workspaceSkillsDir(core: ArmsCore): string {
+  const workspace = core.config.scanRoots.find((r) => r.source === 'workspace')
+  return workspace?.dir ?? core.config.scanRoots[0]?.dir ?? core.config.workspaceRoot
 }
 
 function buildStatus(core: ArmsCore): SystemStatus {
@@ -62,6 +71,25 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
   ipcMain.handle(CH.skillsWriteIndex, async () => {
     await writeSkillsIndex(core.config.skillsIndexPath, core.registry.list())
     return core.config.skillsIndexPath
+  })
+
+  ipcMain.handle(CH.skillsLint, () =>
+    lintSkills({
+      skills: core.registry.list(),
+      tools: core.gateway.registry.tools().map((t) => ({ connectorId: t.connectorId, risk: t.risk }))
+    })
+  )
+  ipcMain.handle(CH.skillsCreate, async (_e, req: NewSkillRequest) => {
+    const created = await createSkill(req, workspaceSkillsDir(core))
+    // Index it immediately so the deck shows it without a manual rescan.
+    await core.registry.refresh()
+    return created
+  })
+  ipcMain.handle(CH.skillsReveal, (_e, id: string) => {
+    const skill = core.registry.get(id)
+    if (!skill) return false
+    shell.showItemInFolder(skill.path)
+    return true
   })
 
   ipcMain.handle(CH.skillRun, (_e, req: SkillRunRequest) =>
@@ -143,6 +171,9 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.skillsGet,
     CH.skillsRefresh,
     CH.skillsWriteIndex,
+    CH.skillsLint,
+    CH.skillsCreate,
+    CH.skillsReveal,
     CH.skillRun,
     CH.skillCancel,
     CH.runsHistory,

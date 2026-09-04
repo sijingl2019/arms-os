@@ -135,6 +135,7 @@ export interface ArmsEvents {
   'gateway:tool:called': ToolCallRecord
   'memory:index:progress': MemoryIndexProgress
   'memory:index:completed': MemoryIndexResult
+  'skills:linted': SkillLintReport
 }
 
 /* --------------------------------------------------------------- routines */
@@ -244,6 +245,11 @@ export interface ArmsOsBridge {
     writeIndex(): Promise<string>
     run(req: SkillRunRequest): Promise<RunRecord>
     cancel(runId: string): Promise<boolean>
+    /** Run the health checks over every indexed skill. */
+    lint(): Promise<SkillLintReport>
+    create(req: NewSkillRequest): Promise<{ id: string; file: string }>
+    /** Show a skill's SKILL.md in the OS file manager. */
+    reveal(id: string): Promise<boolean>
   }
   runs: {
     history(query?: RunHistoryQuery): Promise<RunRecord[]>
@@ -439,4 +445,57 @@ export interface MemoryIndexStatus {
   areas: MemoryAreaSummary[]
   lastResult: MemoryIndexResult | null
   lastIndexedAt: string | null
+}
+
+/* ------------------------------------------------------------ skill lint */
+
+/**
+ * Mechanised form of the pre-flight checklist in 架构规范 §11, plus the
+ * Skill/Gateway consistency check Connector Gateway 设计文档 §4 asks for.
+ */
+export type SkillLintRule =
+  | 'no-description'
+  | 'no-triggers'
+  | 'missing-forbidden'
+  | 'missing-confirm-section'
+  | 'too-long'
+  | 'trigger-conflict'
+  | 'unknown-connector'
+  | 'unguarded-irreversible'
+  | 'overstated-risk'
+
+export type SkillLintSeverity = 'error' | 'warning' | 'info'
+
+export interface SkillFinding {
+  skillId: string
+  rule: SkillLintRule
+  severity: SkillLintSeverity
+  message: string
+  /** What to do about it, in one line. */
+  hint: string
+}
+
+export interface SkillHealth {
+  skillId: string
+  errors: number
+  warnings: number
+  infos: number
+}
+
+export interface SkillLintReport {
+  findings: SkillFinding[]
+  health: SkillHealth[]
+  /** True when the Gateway manifest was available to cross-check against. */
+  connectorsChecked: boolean
+  generatedAt: string
+}
+
+export interface NewSkillRequest {
+  id: string
+  description?: string
+  triggers?: string[]
+  modelHint?: string
+  effortHint?: string
+  /** Defaults to the workspace scan root. */
+  destination?: string
 }

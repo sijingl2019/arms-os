@@ -17,6 +17,8 @@ import { createCore, type ArmsCore } from '@main/core'
 import { writeRouterFiles } from '@main/memory/router'
 import { planSystemTask } from '@main/routines/systemTask'
 import { writeSkillsIndex } from '@main/skills/indexFile'
+import { lintSkills } from '@main/skills/lint'
+import { createSkill } from '@main/skills/scaffold'
 
 const USAGE = `arms - ARMS Agentic OS skill tooling
 
@@ -25,6 +27,10 @@ const USAGE = `arms - ARMS Agentic OS skill tooling
   arms skills show <id>                 show one skill, guardrails included
   arms skills match <text>              resolve free text to skills via triggers
   arms skills index [dest]              write SKILLS_INDEX.md
+  arms skills doctor [--all] [--id X] [--strict]
+                                        health-check your skills (--all includes
+                                        user/plugin skills you did not write)
+  arms skills new <id> [--description D] [--trigger T]
   arms run <id> [options]               execute a skill headless
   arms runs [--skill <id>] [--routine <id>] [--limit N]
                                         recent run records
@@ -193,6 +199,93 @@ async function skillsCommand(core: ArmsCore, flags: Flags): Promise<number> {
     const dest = rest[0] ?? core.config.skillsIndexPath
     await writeSkillsIndex(dest, core.registry.list())
     console.log(`wrote ${dest}`)
+    return 0
+  }
+
+  if (sub === 'doctor') {
+    // Cross-checking needs the Gateway's risk map, which means loading the
+    // manifest - but not opening a port.
+    await core.gateway.reload()
+    const report = lintSkills({
+      skills: core.registry.list(),
+      tools: core.gateway.registry
+        .tools()
+        .map((t) => ({ connectorId: t.connectorId, risk: t.risk }))
+    })
+
+    // Third-party plugin skills were never written to this spec, and they are
+    // not yours to fix - checking them by default buries your own findings.
+    const all = flags.options['all'] === true
+    const owned = new Set(
+      core.registry
+        .list()
+        .filter((sk) => all || sk.source === 'workspace')
+        .map((sk) => sk.id)
+    )
+    const only = str(flags, 'id')
+    const findings = report.findings.filter(
+      (f) => (only ? f.skillId === only : true) && (only !== undefined || owned.has(f.skillId))
+    )
+    const skipped = core.registry.list().length - owned.size
+
+    if (!report.connectorsChecked) {
+      console.warn('note: no connectors configured, so Skill/Gateway cross-checks were skipped')
+    }
+
+    if (skipped > 0) {
+      console.log(`note: skipped ${skipped} user/plugin skill(s); use --all to include them`)
+    }
+
+    if (findings.length === 0) {
+      console.log(`clean — ${owned.size} skill(s) checked`)
+      return 0
+    }
+
+    const icon = { error: 'ERROR', warning: 'WARN ', info: 'info ' }
+    let current = ''
+    for (const f of findings) {
+      if (f.skillId !== current) {
+        current = f.skillId
+        console.log('')
+        console.log(f.skillId)
+      }
+      console.log(`  ${icon[f.severity]} ${f.message}`)
+      console.log(`         ${f.hint}`)
+    }
+
+    const errors = findings.filter((f) => f.severity === 'error').length
+    const warnings = findings.filter((f) => f.severity === 'warning').length
+    console.log('')
+    console.log(`${errors} error(s), ${warnings} warning(s), ${findings.length} total`)
+    // --strict makes this usable as a pre-commit gate.
+    return flags.options['strict'] === true && errors > 0 ? 1 : 0
+  }
+
+  if (sub === 'new') {
+    const id = rest[0]
+    if (!id) {
+      console.error('usage: arms skills new <id> [--description D] [--trigger T]')
+      return 2
+    }
+    const workspaceRoot = core.config.scanRoots.find((r) => r.source === 'workspace')
+    const dest = workspaceRoot?.dir ?? core.config.scanRoots[0]?.dir
+    if (!dest) {
+      console.error('no skill scan root is configured')
+      return 2
+    }
+
+    const description = str(flags, 'description')
+    const trigger = str(flags, 'trigger')
+    const created = await createSkill(
+      {
+        id,
+        ...(description === undefined ? {} : { description }),
+        ...(trigger === undefined ? {} : { triggers: [trigger] })
+      },
+      dest
+    )
+    console.log(`created ${created.file}`)
+    console.log('填好护栏章节后运行 `arms skills refresh` 与 `arms skills doctor`')
     return 0
   }
 
