@@ -2,7 +2,7 @@
 
 基于 Applications / Routines / Memory / Skills 四层框架的个人智能体操作系统。设计文档见仓库根目录的三份 `*_v1.md`，模块规格见 `docs/superpowers/specs/`。
 
-当前已实现：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail），以及托盘常驻的 **Electron + React 外壳**。
+当前已实现：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail）、**Memory Indexer**（增量索引 + FTS5 检索 + 路由文件生成），以及托盘常驻的 **Electron + React 外壳**。
 
 ## 快速开始
 
@@ -49,6 +49,10 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 | `arms gateway serve` | 前台跑 MCP 端点直到 Ctrl+C |
 | `arms gateway calls` / `pending` | 调用审计 / 待批准队列 |
 | `arms gateway approve <id>` / `reject <id>` | 批准 / 拒绝 |
+| `arms memory status` | 知识库根、领域分布、索引规模 |
+| `arms memory index [--force] [--router]` | 增量重扫（`--force` 全量重读） |
+| `arms memory search <text> [--area A]` | 全文检索 |
+| `arms memory router [--dry-run]` | 生成 `CLAUDE.md` 与 `areas/*.md` |
 
 `run` 的参数：`--args`、`--agent claude\|codex`、`--model`、`--effort`、`--cwd`、`--timeout <ms>`、`--dry-run`。
 全局：`--workspace <dir>`。
@@ -59,6 +63,7 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 |---|---|---|
 | `ARMS_WORKSPACE` | `process.cwd()` | 工作区根目录，也是 Skill 运行时的默认 cwd |
 | `ARMS_STATE_DIR` | `~/.arms-os` | 数据库和 `runs.log` 的位置 |
+| `ARMS_MEMORY_ROOTS` | 空 | 知识库目录，多个用系统路径分隔符隔开。不配就不索引 |
 
 Skill 扫描根默认两个：`~/.claude/skills`（`user`）和 `<workspace>/.claude/skills`（`workspace`）。同名时工作区覆盖用户级。
 
@@ -80,6 +85,7 @@ src/
     runs/                runs 表 + runs.log
     routines/            RoutineStore + Scheduler + 系统级任务导出
     gateway/             manifest / registry / 适配器 / 中间件链 / 确认队列 / MCP HTTP Server
+    memory/              walk / extract / store(FTS5) / 增量 indexer / 路由文件生成
     executor/            SkillExecutor
     core.ts              组合根
   preload/index.ts       contextBridge 暴露的唯一通道
@@ -119,6 +125,31 @@ skill:run:chunk      stdout / stderr 流式
 skill:run:completed
 skills:index:updated
 ```
+
+## Memory Indexer
+
+知识库根由 `ARMS_MEMORY_ROOTS` 配置，**独立于 `workspaceRoot`** —— 几万文件的知识库通常不在代码工作区里。
+
+**没有文件上限。** 旧 MVP 卡在 6 万文件封顶，因为它把整棵树读进内存再一次性落盘。现在 walk 是流式的、写入按批次，峰值内存与库大小无关。索引一半却不吭声，比慢一点更糟。
+
+**只读改动过的文件。** 一轮扫描对所有文件 `stat`，但只打开 mtime 或 size 变了的。用 mtime+size 而不是内容哈希：5 万文件每轮全哈希的代价远超收益；哈希才能发现的那种"改了但 mtime/size 都没变"的编辑，用 `--force` 兜底。
+
+**50k 文件实测**（`npm run bench:memory`，Windows）：
+
+| | 数值 |
+|---|---|
+| 首次索引 | 32s / 50000 files，无上限、无警告 |
+| 无变化重扫 | **3.2s** |
+| 改 1 个文件后重扫 | **3.0s** |
+| 中文子串搜索 | 57–120ms |
+| 索引库体积 | 171 MB |
+| 事件循环最大卡顿 | **98ms** |
+
+两处优化都是量出来的，不是猜的：并行 `stat`（重扫 10.1s → 3.2s）、把 SQLite 批次从 500 降到 100 并在批间让出事件循环（卡顿 325ms → 98ms）。
+
+**分词器用 trigram，不是 unicode61。** 实测 unicode61 对中文子串**一个都匹配不到**（它把整段 CJK 当成一个 token）；trigram 能匹配 3 字及以上的中文子串，英文也照常。trigram 的下限是 3 个字符，所以 1–2 字的查询会退回到有界的 `LIKE`（只匹配文件名和标题），而不是静默返回空。
+
+**路由文件生成**（架构规范 §5.1）：`arms memory router` 生成 `CLAUDE.md` 主路由和 `areas/*.md` 领域索引。它**只改两个标记之间的内容**，标记之外一个字节都不碰；没有标记的文件是追加而不是覆盖；写入是原子的，且内容没变就不写。默认写到**知识库根**，不是代码仓——否则会改掉本仓库手写的 `CLAUDE.md`。
 
 ## Connector Gateway
 
@@ -161,4 +192,6 @@ codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
 9. `BrowserAdapter` 只有接口没有实现，调用会明确报错——架构规范 §7.1 本来就把浏览器自动化定为最后手段
 10. Gateway 的 schema 校验是浅校验（必填字段 + 基本类型），不是完整 JSON Schema 验证器；它只拦明显畸形的调用，真正的安全边界是 Guardrail
 11. 限流与熔断是进程内内存状态，重启即清零
-12. 设计文档 §7 把 Gateway 调用记在 `runs` 表，实现里另建了 `tool_calls` 表——两者列几乎不重叠（run 有命令行/退出码/流式输出，tool call 有 connector/JSON 参数/风险判定），合表会让任一种行有一半是 NULL
+12. Memory Indexer 跑在主进程里，没有用设计文档 §8 建议的 `worker_thread`。实测最大卡顿 98ms（且只在全量重建时出现），renderer 是独立进程不受影响，代价只是 IPC 延迟——为此引入独立 DB 连接和 WAL 竞争暂时不划算。若将来全量重建变频繁再补
+13. 只索引正文前 8KB，长文档的尾部搜不到
+14. 设计文档 §7 把 Gateway 调用记在 `runs` 表，实现里另建了 `tool_calls` 表——两者列几乎不重叠（run 有命令行/退出码/流式输出，tool call 有 connector/JSON 参数/风险判定），合表会让任一种行有一半是 NULL

@@ -1,6 +1,8 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { CH } from '@shared/channels'
 import type {
+  MemoryIndexResult,
+  MemorySearchQuery,
   RoutineInput,
   RunHistoryQuery,
   SkillRunRequest,
@@ -8,6 +10,7 @@ import type {
   SystemTaskExport
 } from '@shared/types'
 import type { ArmsCore } from '../core'
+import { writeRouterFiles } from '../memory/router'
 import { planSystemTask } from '../routines/systemTask'
 import { writeSkillsIndex } from '../skills/indexFile'
 
@@ -91,6 +94,22 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
       .all(limit ?? 100)
   )
 
+  ipcMain.handle(CH.memorySearch, (_e, query: MemorySearchQuery) => core.indexer.search(query))
+  ipcMain.handle(CH.memoryStatus, () => core.indexer.status())
+  ipcMain.handle(
+    CH.memoryRefresh,
+    (_e, opts?: { force?: boolean; writeRouter?: boolean }): Promise<MemoryIndexResult> =>
+      core.indexer.refresh(opts ?? {})
+  )
+  ipcMain.handle(CH.memoryWriteRouter, async (_e, dryRun?: boolean) => {
+    if (!core.config.memoryRouterRoot) throw new Error('no memory router root is configured')
+    return writeRouterFiles({
+      store: core.memory,
+      routerRoot: core.config.memoryRouterRoot,
+      ...(dryRun ? { dryRun: true } : {})
+    })
+  })
+
   ipcMain.handle(CH.confirmationsPending, () => core.gateway.confirmations.listPending())
   ipcMain.handle(CH.confirmationsHistory, (_e, limit?: number) =>
     core.gateway.confirmations.history(limit ?? 50)
@@ -114,7 +133,9 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     core.bus.on('gateway:confirmation:decided', (e) =>
       broadcast(CH.eventConfirmationDecided, e)
     ),
-    core.bus.on('gateway:tool:called', (e) => broadcast(CH.eventToolCalled, e))
+    core.bus.on('gateway:tool:called', (e) => broadcast(CH.eventToolCalled, e)),
+    core.bus.on('memory:index:progress', (e) => broadcast(CH.eventMemoryProgress, e)),
+    core.bus.on('memory:index:completed', (e) => broadcast(CH.eventMemoryCompleted, e))
   ]
 
   const channels = [
@@ -137,7 +158,11 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.confirmationsPending,
     CH.confirmationsHistory,
     CH.confirmationsApprove,
-    CH.confirmationsReject
+    CH.confirmationsReject,
+    CH.memorySearch,
+    CH.memoryStatus,
+    CH.memoryRefresh,
+    CH.memoryWriteRouter
   ]
 
   return () => {

@@ -29,6 +29,21 @@ export interface ArmsConfig {
   confirmationTimeoutMs: number
   /** Loopback port for the MCP endpoint agents attach to. */
   gatewayPort: number
+  /**
+   * Knowledge-base directories to index. Separate from `workspaceRoot`: the
+   * vault is rarely the code workspace. Empty means nothing is indexed.
+   */
+  memoryRoots: string[]
+  /**
+   * Where the generated router files (`CLAUDE.md`, `areas/*.md`) are written.
+   * Defaults to the first memory root, never the code workspace - the router
+   * writer must not rewrite this repository's own hand-written CLAUDE.md.
+   */
+  memoryRouterRoot: string | null
+  /** Bytes of each text file fed to the full-text index. */
+  memoryExcerptBytes: number
+  /** Files larger than this are indexed by metadata only. */
+  memoryMaxFileBytes: number
   defaultAgent: AgentId
   defaultTimeoutMs: number
   /** Per-run cap on retained stdout+stderr, so a chatty skill cannot bloat the db. */
@@ -62,12 +77,33 @@ export function loadConfig(overrides: ConfigOverrides = {}): ArmsConfig {
     connectorManifestPath: path.join(workspaceRoot, 'connectors', 'manifest.yaml'),
     confirmationTimeoutMs: FIVE_MINUTES,
     gatewayPort: 39217,
+    memoryRoots: memoryRootsFromEnv(),
+    memoryRouterRoot: null,
+    memoryExcerptBytes: 8_192,
+    memoryMaxFileBytes: 2 * 1024 * 1024,
     defaultAgent: 'claude',
     defaultTimeoutMs: TEN_MINUTES,
     outputCapBytes: 16_000
   }
 
-  return { ...base, ...overrides, workspaceRoot, stateDir }
+  const merged = { ...base, ...overrides, workspaceRoot, stateDir }
+  // Resolve the router root only after overrides, so an explicit setting wins
+  // and the default still tracks whichever roots ended up configured.
+  if (merged.memoryRouterRoot === null && merged.memoryRoots.length > 0) {
+    merged.memoryRouterRoot = merged.memoryRoots[0] ?? null
+  }
+  return merged
+}
+
+/** `ARMS_MEMORY_ROOTS`, path-separator delimited. */
+function memoryRootsFromEnv(): string[] {
+  const raw = process.env['ARMS_MEMORY_ROOTS']
+  if (!raw) return []
+  return raw
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => path.resolve(entry))
 }
 
 /** User-level first, workspace last - workspace wins on a name clash. */

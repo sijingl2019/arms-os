@@ -24,6 +24,10 @@ export const CH = {
   confirmationsHistory: 'confirmations:history',
   confirmationsApprove: 'confirmations:approve',
   confirmationsReject: 'confirmations:reject',
+  memorySearch: 'memory:search',
+  memoryStatus: 'memory:status',
+  memoryRefresh: 'memory:refresh',
+  memoryWriteRouter: 'memory:write-router',
 
   // main -> renderer events
   eventRunStarted: 'event:run-started',
@@ -33,7 +37,9 @@ export const CH = {
   eventRoutinesUpdated: 'event:routines-updated',
   eventConfirmationPending: 'event:confirmation-pending',
   eventConfirmationDecided: 'event:confirmation-decided',
-  eventToolCalled: 'event:tool-called'
+  eventToolCalled: 'event:tool-called',
+  eventMemoryProgress: 'event:memory-progress',
+  eventMemoryCompleted: 'event:memory-completed'
 } as const
 
 export type Channel = (typeof CH)[keyof typeof CH]

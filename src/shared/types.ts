@@ -133,6 +133,8 @@ export interface ArmsEvents {
   'gateway:confirmation:pending': PendingConfirmation
   'gateway:confirmation:decided': { confirmationId: string; status: ConfirmationStatus }
   'gateway:tool:called': ToolCallRecord
+  'memory:index:progress': MemoryIndexProgress
+  'memory:index:completed': MemoryIndexResult
 }
 
 /* --------------------------------------------------------------- routines */
@@ -261,6 +263,13 @@ export interface ArmsOsBridge {
     reload(): Promise<string[]>
     toolCalls(limit?: number): Promise<ToolCallRecord[]>
   }
+  memory: {
+    search(query: MemorySearchQuery): Promise<MemorySearchHit[]>
+    status(): Promise<MemoryIndexStatus>
+    refresh(opts?: { force?: boolean; writeRouter?: boolean }): Promise<MemoryIndexResult>
+    /** Regenerate router files without a sweep; `dryRun` only plans. */
+    writeRouter(dryRun?: boolean): Promise<string[]>
+  }
   /** The approval queue behind every write-irreversible action (§2.3). */
   confirmations: {
     pending(): Promise<PendingConfirmation[]>
@@ -280,6 +289,8 @@ export interface ArmsOsBridge {
       cb: (e: ArmsEvents['gateway:confirmation:decided']) => void
     ): () => void
     toolCalled(cb: (e: ToolCallRecord) => void): () => void
+    memoryProgress(cb: (e: MemoryIndexProgress) => void): () => void
+    memoryCompleted(cb: (e: MemoryIndexResult) => void): () => void
   }
 }
 
@@ -356,4 +367,76 @@ export interface GatewayStatus {
   issues: string[]
   vault: { kind: string; available: boolean }
   pendingConfirmations: number
+}
+
+/* ---------------------------------------------------------------- memory */
+
+export interface MemoryEntry {
+  path: string
+  root: string
+  relPath: string
+  name: string
+  ext: string
+  /** Top-level folder under its root; '' for files sitting at the root. */
+  area: string
+  size: number
+  mtimeMs: number
+  title: string
+  excerpt: string
+  indexedAt: string
+}
+
+export interface MemorySearchHit {
+  path: string
+  relPath: string
+  name: string
+  area: string
+  title: string
+  /** Excerpt around the match where FTS could produce one. */
+  snippet: string
+  /** Lower is a better match (FTS5 bm25); 0 for fallback matches. */
+  score: number
+}
+
+export interface MemorySearchQuery {
+  query: string
+  area?: string
+  limit?: number
+}
+
+export interface MemoryIndexProgress {
+  phase: 'scanning' | 'writing' | 'routing' | 'done'
+  /** Files examined so far. Total is unknown until the sweep finishes. */
+  seen: number
+  changed: number
+  currentRoot: string | null
+}
+
+export interface MemoryIndexResult {
+  added: number
+  updated: number
+  removed: number
+  unchanged: number
+  /** Files skipped by an ignore rule, size cap, or a read error. */
+  skipped: number
+  durationMs: number
+  warnings: string[]
+  /** Router files rewritten, when router generation is enabled. */
+  routerFiles: string[]
+}
+
+export interface MemoryAreaSummary {
+  area: string
+  files: number
+  lastModified: string | null
+}
+
+export interface MemoryIndexStatus {
+  roots: string[]
+  routerRoot: string | null
+  indexing: boolean
+  totalFiles: number
+  areas: MemoryAreaSummary[]
+  lastResult: MemoryIndexResult | null
+  lastIndexedAt: string | null
 }

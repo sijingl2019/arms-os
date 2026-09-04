@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SystemStatus } from '@shared/types'
 import { GatewayPanel } from './panels/GatewayPanel'
+import { MemoryPanel } from './panels/MemoryPanel'
 import { RoutinesPanel } from './panels/RoutinesPanel'
 import { RunsPanel } from './panels/RunsPanel'
 import { SkillsPanel } from './panels/SkillsPanel'
 import { SystemPanel } from './panels/SystemPanel'
 
-const TABS = ['Skills', 'Routines', 'Runs', 'Gateway', 'System'] as const
+const TABS = ['Skills', 'Routines', 'Runs', 'Memory', 'Gateway', 'System'] as const
 type Tab = (typeof TABS)[number]
 
 export function App(): React.JSX.Element {
@@ -68,6 +69,7 @@ export function App(): React.JSX.Element {
         {tab === 'Skills' && <SkillsPanel />}
         {tab === 'Routines' && <RoutinesPanel />}
         {tab === 'Runs' && <RunsPanel />}
+        {tab === 'Memory' && <MemoryPanel />}
         {tab === 'Gateway' && <GatewayPanel />}
         {tab === 'System' && <SystemPanel status={status} onRefresh={refreshStatus} />}
       </main>

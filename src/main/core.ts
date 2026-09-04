@@ -3,6 +3,8 @@ import { loadConfig, type ArmsConfig, type ConfigOverrides } from './config'
 import { openDb, type Db } from './db'
 import { SkillExecutor } from './executor'
 import { ConnectorGateway } from './gateway'
+import { MemoryIndexer } from './memory/indexer'
+import { MemoryStore } from './memory/store'
 import type { CredentialVault } from './gateway/vault'
 import { RoutineScheduler } from './routines/scheduler'
 import { RoutineStore } from './routines/store'
@@ -19,6 +21,8 @@ export interface ArmsCore {
   runs: RunStore
   routines: RoutineStore
   scheduler: RoutineScheduler
+  memory: MemoryStore
+  indexer: MemoryIndexer
   gateway: ConnectorGateway
   executor: SkillExecutor
   /** Number of runs reconciled from a previous session. */
@@ -69,6 +73,8 @@ export function createCore({
   const registry = new SkillRegistry({ db, config, bus })
   const runs = new RunStore({ db, logPath: config.runLogPath })
   const routines = new RoutineStore(db)
+  const memory = new MemoryStore(db)
+  const indexer = new MemoryIndexer({ store: memory, config, bus })
   const executor = new SkillExecutor({
     registry,
     runs,
@@ -107,6 +113,8 @@ export function createCore({
     runs,
     routines,
     scheduler,
+    memory,
+    indexer,
     gateway,
     executor,
     interrupted,

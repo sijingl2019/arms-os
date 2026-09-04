@@ -130,6 +130,60 @@ const MIGRATIONS: Array<(db: Database) => void> = [
 
       CREATE INDEX idx_confirmations_status ON confirmations (status, requested_at DESC);
     `)
+  },
+
+  function v4(db) {
+    db.exec(`
+      CREATE TABLE memory_index (
+        id          INTEGER PRIMARY KEY,
+        path        TEXT NOT NULL UNIQUE,
+        root        TEXT NOT NULL,
+        rel_path    TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        ext         TEXT NOT NULL DEFAULT '',
+        area        TEXT NOT NULL,
+        size        INTEGER NOT NULL,
+        mtime_ms    INTEGER NOT NULL,
+        title       TEXT NOT NULL DEFAULT '',
+        excerpt     TEXT NOT NULL DEFAULT '',
+        indexed_at  TEXT NOT NULL
+      );
+
+      CREATE INDEX idx_memory_root ON memory_index (root);
+      CREATE INDEX idx_memory_area ON memory_index (area, name);
+      -- The incremental sweep's hot comparison is (mtime, size) per path.
+      CREATE INDEX idx_memory_stamp ON memory_index (path, mtime_ms, size);
+
+      -- trigram, not unicode61: unicode61 treats a run of CJK as a single
+      -- token, so a Chinese substring query matches nothing at all. trigram
+      -- handles CJK substrings and English alike. Its floor is three
+      -- characters, which the store falls back to a bounded LIKE scan for.
+      CREATE VIRTUAL TABLE memory_fts USING fts5(
+        name, title, area, excerpt,
+        content = 'memory_index',
+        content_rowid = 'id',
+        tokenize = 'trigram'
+      );
+
+      -- External-content FTS has to be told about every change; triggers keep
+      -- the two in step so no write path can forget.
+      CREATE TRIGGER memory_ai AFTER INSERT ON memory_index BEGIN
+        INSERT INTO memory_fts (rowid, name, title, area, excerpt)
+        VALUES (new.id, new.name, new.title, new.area, new.excerpt);
+      END;
+
+      CREATE TRIGGER memory_ad AFTER DELETE ON memory_index BEGIN
+        INSERT INTO memory_fts (memory_fts, rowid, name, title, area, excerpt)
+        VALUES ('delete', old.id, old.name, old.title, old.area, old.excerpt);
+      END;
+
+      CREATE TRIGGER memory_au AFTER UPDATE ON memory_index BEGIN
+        INSERT INTO memory_fts (memory_fts, rowid, name, title, area, excerpt)
+        VALUES ('delete', old.id, old.name, old.title, old.area, old.excerpt);
+        INSERT INTO memory_fts (rowid, name, title, area, excerpt)
+        VALUES (new.id, new.name, new.title, new.area, new.excerpt);
+      END;
+    `)
   }
 ]
 

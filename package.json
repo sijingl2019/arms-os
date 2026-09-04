@@ -15,7 +15,8 @@
     "postinstall": "install-electron",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "start": "electron-vite preview"
+    "start": "electron-vite preview",
+    "bench:memory": "tsx --tsconfig tsconfig.node.json scripts/bench-memory.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

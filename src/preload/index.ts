@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { CH } from '@shared/channels'
 import type {
   ArmsOsBridge,
+  MemorySearchQuery,
   RoutineInput,
   RunHistoryQuery,
   SkillRunRequest
@@ -47,6 +48,13 @@ const bridge: ArmsOsBridge = {
     reload: () => ipcRenderer.invoke(CH.gatewayReload),
     toolCalls: (limit?: number) => ipcRenderer.invoke(CH.gatewayToolCalls, limit)
   },
+  memory: {
+    search: (query: MemorySearchQuery) => ipcRenderer.invoke(CH.memorySearch, query),
+    status: () => ipcRenderer.invoke(CH.memoryStatus),
+    refresh: (opts?: { force?: boolean; writeRouter?: boolean }) =>
+      ipcRenderer.invoke(CH.memoryRefresh, opts),
+    writeRouter: (dryRun?: boolean) => ipcRenderer.invoke(CH.memoryWriteRouter, dryRun)
+  },
   confirmations: {
     pending: () => ipcRenderer.invoke(CH.confirmationsPending),
     history: (limit?: number) => ipcRenderer.invoke(CH.confirmationsHistory, limit),
@@ -61,7 +69,9 @@ const bridge: ArmsOsBridge = {
     routinesUpdated: (cb) => subscribe(CH.eventRoutinesUpdated, cb),
     confirmationPending: (cb) => subscribe(CH.eventConfirmationPending, cb),
     confirmationDecided: (cb) => subscribe(CH.eventConfirmationDecided, cb),
-    toolCalled: (cb) => subscribe(CH.eventToolCalled, cb)
+    toolCalled: (cb) => subscribe(CH.eventToolCalled, cb),
+    memoryProgress: (cb) => subscribe(CH.eventMemoryProgress, cb),
+    memoryCompleted: (cb) => subscribe(CH.eventMemoryCompleted, cb)
   }
 }
 

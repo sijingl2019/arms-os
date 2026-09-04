@@ -14,6 +14,7 @@ import type {
   SkillMeta
 } from '@shared/types'
 import { createCore, type ArmsCore } from '@main/core'
+import { writeRouterFiles } from '@main/memory/router'
 import { planSystemTask } from '@main/routines/systemTask'
 import { writeSkillsIndex } from '@main/skills/indexFile'
 
@@ -28,6 +29,11 @@ const USAGE = `arms - ARMS Agentic OS skill tooling
   arms runs [--skill <id>] [--routine <id>] [--limit N]
                                         recent run records
   arms doctor                           show resolved config and scan roots
+
+  arms memory status                    roots, areas and index size
+  arms memory index [--force] [--router] rescan the knowledge base
+  arms memory search <text> [--area A] [--limit N]
+  arms memory router [--dry-run]        regenerate CLAUDE.md and areas/*.md
 
   arms gateway status                   connectors, tools and their risk tiers
   arms gateway serve                    run the MCP endpoint until Ctrl+C
@@ -400,6 +406,89 @@ async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
   return 2
 }
 
+async function memoryCommand(core: ArmsCore, flags: Flags): Promise<number> {
+  const [, sub = 'status', ...rest] = flags.positional
+
+  if (sub === 'status') {
+    const status = core.indexer.status()
+    console.log(`roots        ${status.roots.join(', ') || '(none - set ARMS_MEMORY_ROOTS)'}`)
+    console.log(`router root  ${status.routerRoot ?? '-'}`)
+    console.log(`files        ${status.totalFiles}`)
+    console.log(`last indexed ${status.lastIndexedAt ?? '-'}`)
+    if (status.areas.length > 0) {
+      console.log('areas')
+      for (const a of status.areas) {
+        console.log(`  ${(a.area || '(root)').padEnd(24)} ${String(a.files).padStart(6)} files`)
+      }
+    }
+    return 0
+  }
+
+  if (sub === 'index') {
+    const result = await core.indexer.refresh({
+      force: flags.options['force'] === true,
+      writeRouter: flags.options['router'] === true
+    })
+    console.log(
+      `added=${result.added} updated=${result.updated} removed=${result.removed} ` +
+        `unchanged=${result.unchanged} skipped=${result.skipped} in ${result.durationMs}ms`
+    )
+    for (const file of result.routerFiles) console.log(`wrote ${file}`)
+    for (const warning of result.warnings.slice(0, 10)) console.warn(`warn: ${warning}`)
+    if (result.warnings.length > 10) {
+      console.warn(`warn: ...and ${result.warnings.length - 10} more`)
+    }
+    return 0
+  }
+
+  if (sub === 'search') {
+    const text = rest.join(' ')
+    if (!text) {
+      console.error('usage: arms memory search <text>')
+      return 2
+    }
+    const areaFlag = str(flags, 'area')
+    const limitFlag = str(flags, 'limit')
+    const hits = core.indexer.search({
+      query: text,
+      ...(areaFlag === undefined ? {} : { area: areaFlag }),
+      ...(limitFlag === undefined ? {} : { limit: Number(limitFlag) })
+    })
+    if (hits.length === 0) {
+      console.log('(no matches)')
+      return 1
+    }
+    for (const hit of hits) {
+      console.log(`${(hit.area || '-').padEnd(14)} ${hit.title || hit.name}`)
+      console.log(`  ${hit.relPath}`)
+      if (hit.snippet) console.log(`  ${hit.snippet}`)
+    }
+    return 0
+  }
+
+  if (sub === 'router') {
+    if (!core.config.memoryRouterRoot) {
+      console.error('no memory router root configured (set ARMS_MEMORY_ROOTS)')
+      return 2
+    }
+    const dryRun = flags.options['dry-run'] === true
+    const files = await writeRouterFiles({
+      store: core.memory,
+      routerRoot: core.config.memoryRouterRoot,
+      ...(dryRun ? { dryRun: true } : {})
+    })
+    if (files.length === 0) {
+      console.log('(router files already up to date)')
+      return 0
+    }
+    for (const file of files) console.log(`${dryRun ? 'would write' : 'wrote'} ${file}`)
+    return 0
+  }
+
+  console.error(`unknown subcommand: memory ${sub}`)
+  return 2
+}
+
 async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
   const [, sub = 'status', ...rest] = flags.positional
 
@@ -510,6 +599,9 @@ function doctorCommand(core: ArmsCore): number {
   console.log('scan roots')
   for (const root of config.scanRoots) console.log(`  [${root.source}] ${root.dir}`)
   console.log(`indexed       ${core.registry.list().length} skills`)
+  const memory = core.indexer.status()
+  console.log(`memory roots  ${memory.roots.join(', ') || '(none)'}`)
+  console.log(`memory files  ${memory.totalFiles}`)
   const routines = core.routines.list()
   const on = routines.filter((r) => r.enabled).length
   console.log(`routines      ${routines.length} (${on} enabled)`)
@@ -542,6 +634,8 @@ async function main(): Promise<number> {
         return await skillsCommand(core, flags)
       case 'run':
         return await runCommand(core, flags)
+      case 'memory':
+        return await memoryCommand(core, flags)
       case 'gateway':
         return await gatewayCommand(core, flags)
       case 'routines':
