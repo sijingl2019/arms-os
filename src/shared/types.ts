@@ -68,6 +68,8 @@ export interface RunRecord {
   runId: string
   /** null for a raw-prompt run that is not tied to a registered skill. */
   skillId: string | null
+  /** Set when a Routine triggered this run, so its history stays attributable. */
+  routineId: string | null
   label: string
   trigger: RunTrigger
   agent: AgentId
@@ -88,6 +90,8 @@ export interface RunRecord {
 export interface SkillRunRequest {
   skillId: string
   trigger: RunTrigger
+  /** Stamped onto the run record when the Routine Scheduler is the caller. */
+  routineId?: string
   args?: string
   agent?: AgentId
   /** Falls back to the skill's `model_hint`. */
@@ -102,6 +106,7 @@ export interface SkillRunRequest {
 
 export interface RunHistoryQuery {
   skillId?: string
+  routineId?: string
   limit?: number
 }
 
@@ -111,15 +116,89 @@ export interface RunHistoryQuery {
  * later by emitting `routine:fired` and nothing else has to change.
  */
 export interface ArmsEvents {
-  'routine:fired': { routineId: string; skillId: string; args?: string }
+  'routine:fired': RoutineFired
+  'routine:skipped': { routineId: string; reason: RoutineSkipReason; at: string }
+  'routines:updated': { routineId: string | null }
   'skill:run:started': { runId: string; skillId: string | null }
   'skill:run:chunk': { runId: string; stream: 'stdout' | 'stderr'; chunk: string }
   'skill:run:completed': {
     runId: string
     skillId: string | null
+    routineId: string | null
     status: RunStatus
     exitCode: number | null
     endedAt: string
   }
   'skills:index:updated': RefreshResult
+}
+
+/* --------------------------------------------------------------- routines */
+
+/**
+ * What to do about a trigger that came due while the app was closed
+ * (系统设计文档 §9). `skip` is the default: catching up a backlog is how a
+ * Routine acquires duplicate side effects, which 架构规范 §6.2 warns about.
+ */
+export type MissedRunPolicy = 'skip' | 'catch-up-once'
+
+export type RoutineSkipReason =
+  | 'missed-while-offline'
+  | 'previous-run-still-active'
+  | 'unknown-skill'
+
+export type RoutineLastStatus = RunStatus | 'skipped'
+
+export interface RoutineFired {
+  routineId: string
+  skillId: string
+  args?: string
+  /** 1 for the scheduled firing; higher for automatic retries. */
+  attempt: number
+}
+
+export interface RoutineDef {
+  id: string
+  name: string
+  skillId: string
+  /** croner expression. Validated on write, so a bad one never reaches the loop. */
+  cron: string
+  /** IANA zone; null means the host's local time. */
+  timezone: string | null
+  args: string | null
+  agent: AgentId | null
+  model: string | null
+  effort: string | null
+  enabled: boolean
+  missedRunPolicy: MissedRunPolicy
+  /** 0 disables retries. 架构规范 §6.2 requires this to be explicit. */
+  maxRetries: number
+  retryDelayMs: number
+  nextRunAt: string | null
+  lastRunAt: string | null
+  lastStatus: RoutineLastStatus | null
+  lastRunId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RoutineInput {
+  name: string
+  skillId: string
+  cron: string
+  timezone?: string | null
+  args?: string | null
+  agent?: AgentId | null
+  model?: string | null
+  effort?: string | null
+  enabled?: boolean
+  missedRunPolicy?: MissedRunPolicy
+  maxRetries?: number
+  retryDelayMs?: number
+}
+
+export interface RoutineStartupReport {
+  loaded: number
+  missed: number
+  caughtUp: number
+  skipped: number
 }

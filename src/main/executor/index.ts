@@ -73,9 +73,10 @@ export class SkillExecutor {
    * has to emit that event - it never calls the executor directly.
    */
   start(): void {
-    this.unsubscribe ??= this.bus.on('routine:fired', ({ skillId, args }) => {
+    this.unsubscribe ??= this.bus.on('routine:fired', ({ routineId, skillId, args }) => {
       void this.run({
         skillId,
+        routineId,
         trigger: 'routine',
         ...(args === undefined ? {} : { args })
       }).catch(() => {
@@ -119,6 +120,7 @@ export class SkillExecutor {
     const record: RunRecord = {
       runId: randomUUID(),
       skillId: skill.id,
+      routineId: req.routineId ?? null,
       label: this.labelFor(skill, req.args),
       trigger: req.trigger,
       agent: agentId,
@@ -221,6 +223,7 @@ export class SkillExecutor {
     this.bus.emit('skill:run:completed', {
       runId: saved.runId,
       skillId: saved.skillId,
+      routineId: saved.routineId,
       status: saved.status,
       exitCode: saved.exitCode,
       endedAt

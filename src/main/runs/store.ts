@@ -6,6 +6,7 @@ import type { Db } from '../db'
 interface RunRow {
   run_id: string
   skill_id: string | null
+  routine_id: string | null
   label: string
   trigger: string
   agent: string
@@ -26,6 +27,7 @@ function toRecord(row: RunRow): RunRecord {
   return {
     runId: row.run_id,
     skillId: row.skill_id,
+    routineId: row.routine_id,
     label: row.label,
     trigger: row.trigger as RunRecord['trigger'],
     agent: row.agent as RunRecord['agent'],
@@ -74,16 +76,17 @@ export class RunStore {
   create(record: RunRecord): RunRecord {
     this.db
       .prepare(`
-        INSERT INTO runs (run_id, skill_id, label, trigger, agent, model, effort, cwd,
-                          command, status, exit_code, started_at, ended_at, duration_ms,
-                          output, error)
-        VALUES (@run_id, @skill_id, @label, @trigger, @agent, @model, @effort, @cwd,
-                @command, @status, @exit_code, @started_at, @ended_at, @duration_ms,
-                @output, @error)
+        INSERT INTO runs (run_id, skill_id, routine_id, label, trigger, agent, model,
+                          effort, cwd, command, status, exit_code, started_at, ended_at,
+                          duration_ms, output, error)
+        VALUES (@run_id, @skill_id, @routine_id, @label, @trigger, @agent, @model,
+                @effort, @cwd, @command, @status, @exit_code, @started_at, @ended_at,
+                @duration_ms, @output, @error)
       `)
       .run({
         run_id: record.runId,
         skill_id: record.skillId,
+        routine_id: record.routineId,
         label: record.label,
         trigger: record.trigger,
         agent: record.agent,
@@ -135,14 +138,21 @@ export class RunStore {
     return row ? toRecord(row) : undefined
   }
 
-  list({ skillId, limit = 50 }: RunHistoryQuery = {}): RunRecord[] {
-    const rows = skillId
-      ? (this.db
-          .prepare('SELECT * FROM runs WHERE skill_id = ? ORDER BY started_at DESC LIMIT ?')
-          .all(skillId, limit) as RunRow[])
-      : (this.db
-          .prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT ?')
-          .all(limit) as RunRow[])
+  list({ skillId, routineId, limit = 50 }: RunHistoryQuery = {}): RunRecord[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (skillId) {
+      where.push('skill_id = ?')
+      params.push(skillId)
+    }
+    if (routineId) {
+      where.push('routine_id = ?')
+      params.push(routineId)
+    }
+    const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
+    const rows = this.db
+      .prepare(`SELECT * FROM runs ${clause} ORDER BY started_at DESC LIMIT ?`)
+      .all(...params, limit) as RunRow[]
     return rows.map(toRecord)
   }
 

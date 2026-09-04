@@ -242,11 +242,11 @@ describe('routine wiring', () => {
     await setup()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest', args: 'daily' })
+    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest', args: 'daily', attempt: 1 })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls[0]?.args[1]).toBe('/news-digest daily')
-    expect(executor.history()[0]?.trigger).toBe('routine')
+    expect(executor.history()[0]).toMatchObject({ trigger: 'routine', routineId: 'r1' })
   })
 
   it('does not subscribe twice when start is called again', async () => {
@@ -254,7 +254,7 @@ describe('routine wiring', () => {
     executor.start()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest' })
+    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest', attempt: 1 })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls).toHaveLength(1)
@@ -264,7 +264,7 @@ describe('routine wiring', () => {
     await setup()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'deleted-skill' })
+    bus.emit('routine:fired', { routineId: 'r1', skillId: 'deleted-skill', attempt: 1 })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls).toHaveLength(0)

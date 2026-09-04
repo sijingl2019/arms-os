@@ -5,8 +5,16 @@
  * product surface.
  */
 import process from 'node:process'
-import type { AgentId, RunRecord, SkillMeta } from '@shared/types'
+import type {
+  AgentId,
+  MissedRunPolicy,
+  RoutineDef,
+  RoutineInput,
+  RunRecord,
+  SkillMeta
+} from '@shared/types'
 import { createCore, type ArmsCore } from '@main/core'
+import { planSystemTask } from '@main/routines/systemTask'
 import { writeSkillsIndex } from '@main/skills/indexFile'
 
 const USAGE = `arms - ARMS Agentic OS skill tooling
@@ -17,8 +25,22 @@ const USAGE = `arms - ARMS Agentic OS skill tooling
   arms skills match <text>              resolve free text to skills via triggers
   arms skills index [dest]              write SKILLS_INDEX.md
   arms run <id> [options]               execute a skill headless
-  arms runs [--skill <id>] [--limit N]  recent run records
+  arms runs [--skill <id>] [--routine <id>] [--limit N]
+                                        recent run records
   arms doctor                           show resolved config and scan roots
+
+  arms routines list                    list routines with their next run time
+  arms routines add --name N --skill S --cron "0 9 * * *" [routine options]
+  arms routines set <id> [routine options]
+  arms routines rm <id>
+  arms routines tick [--at <iso>]       run one scheduler pass by hand
+  arms routines export <id>             print an OS-level scheduled task command
+
+routine options:
+  --name, --skill, --cron, --tz, --args, --agent, --model, --effort
+  --enabled true|false
+  --missed skip|catch-up-once           what to do about a trigger missed offline
+  --retries N  --retry-delay <ms>
 
 run options:
   --args "<text>"   appended to the prompt
@@ -220,6 +242,157 @@ async function runCommand(core: ArmsCore, flags: Flags): Promise<number> {
   return status === 'succeeded' ? 0 : 1
 }
 
+function routineOptions(flags: Flags): Partial<RoutineInput> {
+  const bool = (key: string): boolean | undefined => {
+    const raw = flags.options[key]
+    if (raw === undefined) return undefined
+    return raw === true || raw === 'true'
+  }
+  const num = (key: string): number | undefined => {
+    const raw = str(flags, key)
+    return raw === undefined ? undefined : Number(raw)
+  }
+
+  const patch: Partial<RoutineInput> = {}
+  const name = str(flags, 'name')
+  const skillId = str(flags, 'skill')
+  const cron = str(flags, 'cron')
+  const tz = str(flags, 'tz')
+  const args = str(flags, 'args')
+  const agent = str(flags, 'agent')
+  const model = str(flags, 'model')
+  const effort = str(flags, 'effort')
+  const missed = str(flags, 'missed')
+  const enabled = bool('enabled')
+  const retries = num('retries')
+  const retryDelay = num('retry-delay')
+
+  if (name !== undefined) patch.name = name
+  if (skillId !== undefined) patch.skillId = skillId
+  if (cron !== undefined) patch.cron = cron
+  if (tz !== undefined) patch.timezone = tz
+  if (args !== undefined) patch.args = args
+  if (agent !== undefined) patch.agent = agent as AgentId
+  if (model !== undefined) patch.model = model
+  if (effort !== undefined) patch.effort = effort
+  if (missed !== undefined) patch.missedRunPolicy = missed as MissedRunPolicy
+  if (enabled !== undefined) patch.enabled = enabled
+  if (retries !== undefined) patch.maxRetries = retries
+  if (retryDelay !== undefined) patch.retryDelayMs = retryDelay
+  return patch
+}
+
+function printRoutine(r: RoutineDef): void {
+  const state = r.enabled ? 'on ' : 'off'
+  console.log(
+    `${state} ${r.id.slice(0, 8)}  ${r.name.padEnd(24)} ${r.skillId.padEnd(20)} ` +
+      `${r.cron.padEnd(14)} next=${r.nextRunAt ?? '-'} last=${r.lastStatus ?? '-'}`
+  )
+}
+
+async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
+  const [, sub = 'list', ...rest] = flags.positional
+
+  /** Accept an id prefix, the way git accepts a short sha. */
+  const resolve = (prefix: string): RoutineDef | undefined => {
+    const all = core.routines.list()
+    return all.find((r) => r.id === prefix) ?? all.find((r) => r.id.startsWith(prefix))
+  }
+
+  if (sub === 'list') {
+    const all = core.routines.list()
+    if (all.length === 0) {
+      console.log('(no routines - add one with `arms routines add`)')
+      return 0
+    }
+    all.forEach(printRoutine)
+    return 0
+  }
+
+  if (sub === 'add') {
+    const patch = routineOptions(flags)
+    if (!patch.name || !patch.skillId || !patch.cron) {
+      console.error('usage: arms routines add --name N --skill S --cron "0 9 * * *"')
+      return 2
+    }
+    if (!core.registry.get(patch.skillId)) {
+      console.error(`unknown skill: ${patch.skillId} (run \`arms skills refresh\` first)`)
+      return 1
+    }
+    const created = core.routines.create(patch as RoutineInput)
+    printRoutine(created)
+    return 0
+  }
+
+  if (sub === 'set' || sub === 'rm') {
+    const prefix = rest[0]
+    if (!prefix) {
+      console.error(`usage: arms routines ${sub} <id>`)
+      return 2
+    }
+    const found = resolve(prefix)
+    if (!found) {
+      console.error(`unknown routine: ${prefix}`)
+      return 1
+    }
+    if (sub === 'rm') {
+      core.routines.remove(found.id)
+      console.log(`removed ${found.id}  ${found.name}`)
+      return 0
+    }
+    printRoutine(core.routines.update(found.id, routineOptions(flags)))
+    return 0
+  }
+
+  if (sub === 'tick') {
+    const at = str(flags, 'at')
+    const now = at === undefined ? new Date() : new Date(at)
+    if (Number.isNaN(now.getTime())) {
+      console.error(`not a date: ${at}`)
+      return 2
+    }
+    if (flags.options['dry-run'] === true) {
+      // Unsubscribe the executor so a tick can be inspected without an agent
+      // process actually being launched.
+      core.executor.stop()
+      console.log('(dry run - executor detached, nothing will be spawned)')
+    }
+
+    const result = core.scheduler.tick(now)
+    console.log(
+      `fired=${result.fired.length} retried=${result.retried.length} skipped=${result.skipped.length}`
+    )
+    for (const id of result.fired) {
+      const r = core.routines.get(id)
+      console.log(`  fired   ${id.slice(0, 8)} ${r?.name ?? ''}  next=${r?.nextRunAt ?? '-'}`)
+    }
+    for (const s of result.skipped) console.log(`  skipped ${s.routineId.slice(0, 8)}: ${s.reason}`)
+    return 0
+  }
+
+  if (sub === 'export') {
+    const prefix = rest[0]
+    const found = prefix ? resolve(prefix) : undefined
+    if (!found) {
+      console.error('usage: arms routines export <id>')
+      return 2
+    }
+    const plan = planSystemTask({ routine: found, workspaceRoot: core.config.workspaceRoot })
+    if (!plan.command) {
+      console.error(`cannot express this routine as a ${plan.platform} scheduled task:`)
+      for (const note of plan.notes) console.error(`  - ${note}`)
+      return 1
+    }
+    console.log(`# ${plan.platform} scheduled task for "${found.name}"`)
+    for (const note of plan.notes) console.log(`# note: ${note}`)
+    console.log(plan.command)
+    return 0
+  }
+
+  console.error(`unknown subcommand: routines ${sub}`)
+  return 2
+}
+
 function doctorCommand(core: ArmsCore): number {
   const { config } = core
   console.log(`workspace     ${config.workspaceRoot}`)
@@ -231,6 +404,14 @@ function doctorCommand(core: ArmsCore): number {
   console.log('scan roots')
   for (const root of config.scanRoots) console.log(`  [${root.source}] ${root.dir}`)
   console.log(`indexed       ${core.registry.list().length} skills`)
+  const routines = core.routines.list()
+  const on = routines.filter((r) => r.enabled).length
+  console.log(`routines      ${routines.length} (${on} enabled)`)
+  const soonest = routines
+    .map((r) => r.nextRunAt)
+    .filter((v): v is string => v !== null)
+    .sort()[0]
+  if (soonest) console.log(`next trigger  ${soonest}`)
   if (core.interrupted > 0) {
     console.log(`reconciled    ${core.interrupted} run(s) left running by a previous session`)
   }
@@ -255,12 +436,16 @@ async function main(): Promise<number> {
         return await skillsCommand(core, flags)
       case 'run':
         return await runCommand(core, flags)
+      case 'routines':
+        return await routinesCommand(core, flags)
       case 'runs': {
         const skillId = str(flags, 'skill')
+        const routineId = str(flags, 'routine')
         const limit = str(flags, 'limit')
         printRuns(
           core.executor.history({
             ...(skillId === undefined ? {} : { skillId }),
+            ...(routineId === undefined ? {} : { routineId }),
             ...(limit === undefined ? {} : { limit: Number(limit) })
           })
         )

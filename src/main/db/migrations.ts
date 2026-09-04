@@ -47,6 +47,39 @@ const MIGRATIONS: Array<(db: Database) => void> = [
       CREATE INDEX idx_runs_skill ON runs (skill_id, started_at DESC);
       CREATE INDEX idx_runs_started ON runs (started_at DESC);
     `)
+  },
+
+  function v2(db) {
+    db.exec(`
+      CREATE TABLE routines (
+        id                 TEXT PRIMARY KEY,
+        name               TEXT NOT NULL,
+        skill_id           TEXT NOT NULL,
+        cron               TEXT NOT NULL,
+        timezone           TEXT,
+        args               TEXT,
+        agent              TEXT,
+        model              TEXT,
+        effort             TEXT,
+        enabled            INTEGER NOT NULL DEFAULT 1,
+        missed_run_policy  TEXT NOT NULL DEFAULT 'skip',
+        max_retries        INTEGER NOT NULL DEFAULT 0,
+        retry_delay_ms     INTEGER NOT NULL DEFAULT 60000,
+        next_run_at        TEXT,
+        last_run_at        TEXT,
+        last_status        TEXT,
+        last_run_id        TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+      );
+
+      -- The scheduler's hot query is "what is due now", so index the due column.
+      CREATE INDEX idx_routines_due ON routines (enabled, next_run_at);
+
+      -- Attribute a run back to the routine that triggered it.
+      ALTER TABLE runs ADD COLUMN routine_id TEXT;
+      CREATE INDEX idx_runs_routine ON runs (routine_id, started_at DESC);
+    `)
   }
 ]
 
