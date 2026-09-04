@@ -12,6 +12,11 @@ npm test
 npx tsx scripts/arms.ts doctor
 ```
 
+> `npm install` 会顺带下载 Electron 二进制（约 245MB）。这一步靠本项目的
+> `postinstall: install-electron` 触发——**Electron 从 v43 起移除了自己的 postinstall**，
+> 不显式调用就只会装个空壳包。首次下载走 `.npmrc` 里配置的镜像；装过一次后有本地缓存，
+> 重装只要几秒。
+
 `doctor` 会打印解析出的工作区、状态目录和 Skill 扫描根。确认无误后：
 
 ```bash
@@ -87,7 +92,8 @@ skills:index:updated
 
 ## 已知技术债
 
-1. `better-sqlite3` 是原生模块，接 Electron 时需要 `electron-rebuild`（Windows 需 VS Build Tools）
+1. ~~`better-sqlite3` 接 Electron 需要 `electron-rebuild`~~ 已解决：升到 v13 后它是 Node-API 插件，
+   走 `prebuilds/` 里的预编译产物，ABI 跨 Node 与 Electron 通用，不需要重编译
 2. Skill 扫描只认扫描根下一层子目录的 `SKILL.md`，Skill Tree 的子文件（架构规范 §4.2）不单独索引
 3. 护栏字段只入库、不校验；与 connector manifest 的一致性检查留给 Gateway 落地时做
 4. `SKILLS_INDEX.md` 目前把用户级 Skill 也一并列入，尚无按来源筛选的开关

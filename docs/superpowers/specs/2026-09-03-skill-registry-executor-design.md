@@ -21,7 +21,7 @@ Electron 外壳、preload/IPC、Connector Gateway、Routine Scheduler、Memory I
 | 项 | 选择 | 理由 |
 |---|---|---|
 | 落地目录 | `E:\Workspace\arms-os`，全新项目 | 用户决定 |
-| 存储 | `better-sqlite3` | 设计文档 §7 要求 SQLite；同步 API、事务完整、支持 FTS5（Memory Indexer 后续要用）。代价：原生模块，将来接 Electron 需 electron-rebuild |
+| 存储 | `better-sqlite3` | 设计文档 §7 要求 SQLite；同步 API、事务完整、支持 FTS5（Memory Indexer 后续要用）。当时判断的代价是「原生模块，接 Electron 需 electron-rebuild」——见下方技术债 1，该判断已被 v13 推翻 |
 | 第一步范围 | 主进程核心 + 验证用 CLI | 不开 Electron 就能验证整条链路 |
 | Skill 扫描根 | 工作区 + 用户级，可配置 | `<workspace>/.claude/skills` 与 `~/.claude/skills`；同名时工作区优先 |
 | 执行方式 | 由 AgentRuntime 决定 | claude runtime 走 slash 命令（`claude -p "/name"`），codex runtime 内联 SKILL.md 正文；差异关在 runtime 内，Executor 只认 skillId |
@@ -158,6 +158,11 @@ tsx scripts/arms.ts runs [--skill <id>] [--limit N]
 
 ## 10. 已知技术债
 
-1. `better-sqlite3` 是原生模块，接入 Electron 时需要 `electron-rebuild`，Windows 需 VS Build Tools
+1. ~~`better-sqlite3` 接入 Electron 需要 `electron-rebuild`，Windows 需 VS Build Tools~~
+   **已解决（2026-09-04）**：升级到 v13.0.3 后改用 Node-API + `prebuilds/`，同一份 `.node`
+   在 Node 22 与 Electron 44 下都能加载，`electron-rebuild` 变成空操作，已从 postinstall 移除。
+   期间踩到的两个坑记录在案：v11 的 C++ 用了 Electron 44 的 V8 已删除的 API（`Context::GetIsolate`、
+   零参 `External::Value()`、`PropertyCallbackInfo::This`）根本编不过；而在 Electron 33 上重编译虽然成功，
+   产物却变成 Electron ABI 专用，当场让 vitest 和 CLI 全部无法加载
 2. Skill 扫描目前只认扫描根下的一层子目录 + `SKILL.md`，Skill Tree 的子文件（架构规范 §4.2）不单独索引
 3. 护栏字段只入库、不校验；与 Connector manifest 的一致性检查留给 Gateway 落地时做
