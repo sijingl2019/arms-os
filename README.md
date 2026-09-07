@@ -28,6 +28,14 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 
 `--dry-run` 只记录将要执行的命令行，不真的拉起 agent 进程——先用它确认命令拼对了，再去掉这个参数真跑。
 
+## 桌面外观与背景
+
+界面采用 Liquid Glass 风格，桌面组件、Dock、搜索、对话和管理面板统一适配深浅主题。右上角可切换主题，设置入口在 Dock 最右侧。
+
+**设置 → 桌面背景**提供 6 款纯色、6 款渐变和随主题变化的「流光」背景，选择后立即保存。也可上传 JPG / PNG / WebP 图片（最大 12 MB），选择填充屏幕或完整显示。图片副本保存在本机，移动原图不影响背景；切换预设会保留最近上传的图片，点击「移除图片」才会删除该副本。
+
+外观偏好存储在 Electron 的本地浏览器数据中，开发预览与打包应用的存储相互独立。背景不上传、不修改源文件；清理应用浏览器数据会清除这些偏好和图片副本。
+
 ## CLI
 
 | 命令 | 作用 |
@@ -51,6 +59,8 @@ npx tsx scripts/arms.ts run news-digest --dry-run
 | `arms gateway serve` | 前台跑 MCP 端点直到 Ctrl+C |
 | `arms gateway calls` / `pending` | 调用审计 / 待批准队列 |
 | `arms gateway approve <id>` / `reject <id>` | 批准 / 拒绝 |
+| `arms gateway prune [--dry-run]` | 按保留策略清理审计表 |
+| `arms gateway compact` | `VACUUM`，把清理出的空间还给文件系统 |
 | `arms memory status` | 知识库根、领域分布、索引规模 |
 | `arms memory index [--force] [--router]` | 增量重扫（`--force` 全量重读） |
 | `arms memory search <text> [--area A]` | 全文检索 |
@@ -130,6 +140,26 @@ skill:run:completed
 skills:index:updated
 ```
 
+## Email 连接器
+
+`connectors/email-imap/server.js`，一个 **MCP stdio server**，不是 CLI。原因是 Gateway 的 `CliAdapter` 每次调用都要重开进程——对 IMAP 就意味着重做一次 TCP + TLS + LOGIN；而 `McpPassthroughAdapter` 连一次就复用，控件每两分钟刷一下只花一个往返。
+
+配置分两半：`IMAP_HOST` / `IMAP_PORT` / `IMAP_USER` 是普通配置，写在 manifest 的 `env` 里；**只有应用专用密码是秘密**，走 `credential_ref: vault://email-imap`，在真正调用那一刻才解密，且只注入子进程环境变量。
+
+工具与风险：`list_unread` / `search` → read-only，`mark_read` → write-reversible。没做删除和发送——那是 write-irreversible，定时任务本来就不许调，需要时应该写成 Skill。
+
+**没有用 IMAP IDLE**，保持 Gateway 统一的请求-响应模型；控件要的只是一个有界的最新视图，所以也不需要 UIDVALIDITY+UID 增量锚点。
+
+### 凭据怎么存
+
+之前 `SafeStorageVault.set()` 有实现但没有任何调用方，也就是说带 `credential_ref` 的 connector 根本用不起来。现在 Gateway 面板有了凭据区：列出 manifest 要哪些凭据、每个有没有设置、可设置/替换/删除。
+
+**秘密只单向流动**：renderer → main → safeStorage。没有任何 IPC 会把值返回给界面，面板只知道"有"或"没有"。CLI 里 vault 是 `RefusingVault`，会明确拒绝而不是降级成明文。
+
+### Email 控件
+
+控件自己不抓邮件，它只渲染**定时任务最后写下的那个值**。链路是 Connector → Gateway → tool routine → `routine_results` → 控件，全程没有 agent 参与。
+
 ## Skill 体检
 
 把架构规范 §11 的上线前自检清单机器化，外加 Connector Gateway 设计文档 §4 点名要做的那个校验脚本。
@@ -194,6 +224,21 @@ codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
 
 **审批是阻塞式的**：`tools/call` 一直挂着直到你批准/拒绝或超时（默认 5 分钟），然后返回真实结果。设计文档 §2.3 原本写的是立刻返回占位符让 agent 轮询——实践中 agent 会把占位符当成功继续往下跑，所以改成阻塞。有审批待处理时托盘 tooltip 会提示，窗口会自动弹出。
 
+### 审计表保留策略
+
+`tool_calls` 里其实住着两种完全不同的东西：一个每两分钟刷新的控件每天贡献几百条**成功的只读**记录，一周后毫无价值；而**被拒绝、被拦下、失败、超时的调用，以及任何写操作**，恰恰是几个月后出事时你要翻的东西。
+
+所以保留期按**事后回溯价值**分档，不是单纯按年龄：
+
+| 档 | 条件 | 默认 |
+|---|---|---|
+| 长期 | 非 `read-only` 的调用，或结局不是 `succeeded` 的调用 | 90 天 |
+| 短期 | 成功的 `read-only` 调用（控件刷新噪声） | 7 天 |
+
+Gateway 启动时清一次，之后每天一次。面板和 CLI 都能手动触发，并会分别报出"超期"和"只读噪声"各清了多少——只说"清了 5000 条"没法判断清掉的是一周的刷新还是三个月的历史。
+
+**删行不会让 `.db` 变小。** SQLite 会保留页面复用，`auto_vacuum` 只能在建表前设定，现有库要还空间必须整库 `VACUUM`——那会重写整个文件，太贵，不能挂在定时器上。所以它是一条你自己按需执行的命令（`arms gateway compact` 或面板上的「回收空间」）。实测：2 万条大记录撑到 95.5MB，`prune` 删光后文件**纹丝不动**，`compact` 后降到 135KB。
+
 中间件链顺序在 `dispatcher.ts` 一处声明：审计 → schema 校验 → 限流 → **Guardrail** → 熔断。审计**包在最外层**，因为被拦下的调用恰恰是最该进日志的。
 
 凭据只以 `vault://<id>` 引用形式出现在 manifest 里，解密发生在真正调用下游的那一刻，且只进子进程环境变量、绝不上命令行（命令行会进审计日志）。
@@ -212,6 +257,7 @@ codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
 9. `BrowserAdapter` 只有接口没有实现，调用会明确报错——架构规范 §7.1 本来就把浏览器自动化定为最后手段
 10. Gateway 的 schema 校验是浅校验（必填字段 + 基本类型），不是完整 JSON Schema 验证器；它只拦明显畸形的调用，真正的安全边界是 Guardrail
 11. 限流与熔断是进程内内存状态，重启即清零
+12. 保留策略目前只管 `tool_calls`。`confirmations`、`runs`、`memory_index` 都还会无限增长——前两个量小，`memory_index` 由知识库规模决定，需要时再补
 12. Memory Indexer 跑在主进程里，没有用设计文档 §8 建议的 `worker_thread`。实测最大卡顿 98ms（且只在全量重建时出现），renderer 是独立进程不受影响，代价只是 IPC 延迟——为此引入独立 DB 连接和 WAL 竞争暂时不划算。若将来全量重建变频繁再补
 13. 只索引正文前 8KB，长文档的尾部搜不到
 14. Skill 体检里「依赖的 Application」是自由文本，靠在其中匹配已知 connector id 来关联；写法完全不含 id 时不会触发交叉校验（因此报 info 而非 error）

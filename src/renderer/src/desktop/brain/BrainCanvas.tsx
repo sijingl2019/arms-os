@@ -51,31 +51,61 @@ interface LayerStyle {
 }
 
 const CORE_STYLE: LayerStyle = {
-  linkWeight: 0.2,
-  sat: 1,
-  dotSize: 1.5,
-  lightBase: 52,
-  alphaFloor: 0.12,
-  alphaGain: 1.7,
+  // The links carry the structure; at full saturation the dots alone read as
+  // confetti scattered on black, so the web is drawn up and the dots down.
+  linkWeight: 0.4,
+  sat: 0.74,
+  dotSize: 1.15,
+  lightBase: 50,
+  alphaFloor: 0.1,
+  alphaGain: 1.5,
   kFloor: 0.55
 }
 
 const HALO_STYLE: LayerStyle = {
-  linkWeight: 0.06,
-  sat: 0.5,
-  dotSize: 1.1,
-  lightBase: 58,
-  alphaFloor: 0.08,
-  alphaGain: 1.1,
+  linkWeight: 0.09,
+  sat: 0.34,
+  dotSize: 1,
+  lightBase: 56,
+  alphaFloor: 0.06,
+  alphaGain: 1,
   kFloor: 0.7
 }
 
-/** The palette, resolved from the document's custom properties. */
-function readTones(): Tone[] {
+/**
+ * Everything the canvas paints with, resolved from the document's custom
+ * properties. Canvas cannot use `var()`, so the theme has to be read out here
+ * and re-read whenever `data-theme` changes.
+ */
+interface Palette {
+  tones: Tone[]
+  /** rgb triplets, so alpha can vary per use. */
+  shell: string
+  ring: string
+  orbit: string
+  particle: string
+  trail: string
+  /** Added to each dot's HSL lightness; negative darkens for the light theme. */
+  lightnessShift: number
+}
+
+/** Fallbacks match the dark theme's tokens, for a stylesheet that failed to load. */
+function readPalette(): Palette {
   const style = getComputedStyle(document.documentElement)
-  return TONE_VARS.map(
-    (name, i) => hexToTone(style.getPropertyValue(name)) ?? FALLBACK_TONES[i] ?? FALLBACK_TONES[0]!
-  )
+  const rgb = (name: string, fallback: string): string =>
+    style.getPropertyValue(name).trim() || fallback
+
+  return {
+    tones: TONE_VARS.map(
+      (name, i) => hexToTone(style.getPropertyValue(name)) ?? FALLBACK_TONES[i] ?? FALLBACK_TONES[0]!
+    ),
+    shell: rgb('--core-shell', '66, 142, 255'),
+    ring: rgb('--core-ring', '120, 200, 255'),
+    orbit: rgb('--core-orbit', '90, 170, 255'),
+    particle: rgb('--core-particle', '210, 240, 255'),
+    trail: rgb('--core-trail', '140, 215, 255'),
+    lightnessShift: Number(style.getPropertyValue('--core-lightness-shift')) || 0
+  }
 }
 
 /** `hsla()` for a dot or a link, given its tone and how much light it carries. */
@@ -98,12 +128,13 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    let tones = readTones()
+    let palette = readPalette()
     const core = createCloud(CORE, TONE_VARS.length, 1337)
     const halo = createCloud(HALO, TONE_VARS.length, 90210)
 
     let width = 0
     let height = 0
+    let redrawAfterResize = (): void => {}
     const resize = (): void => {
       const rect = canvas.getBoundingClientRect()
       const dpr = window.devicePixelRatio || 1
@@ -112,6 +143,7 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
       canvas.width = Math.max(1, Math.round(width * dpr))
       canvas.height = Math.max(1, Math.round(height * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      redrawAfterResize()
     }
     resize()
 
@@ -140,9 +172,15 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
       forEachLink(dots, reach, (a, b, closeness) => {
         // A link takes the colour of its first endpoint: cheaper than a
         // gradient, and near neighbours are usually the same tone anyway.
-        const tone = tones[a.tone] ?? tones[0]
+        const tone = palette.tones[a.tone] ?? palette.tones[0]
         if (!tone) return
-        ctx.strokeStyle = toneColor(tone, a.drift, 62, closeness * style.linkWeight, style.sat)
+        ctx.strokeStyle = toneColor(
+          tone,
+          a.drift,
+          62 + palette.lightnessShift,
+          closeness * style.linkWeight,
+          style.sat
+        )
         ctx.beginPath()
         ctx.moveTo(cx + a.sx, cy + a.sy)
         ctx.lineTo(cx + b.sx, cy + b.sy)
@@ -150,7 +188,7 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
       })
 
       for (const dot of dots) {
-        const tone = tones[dot.tone] ?? tones[0]
+        const tone = palette.tones[dot.tone] ?? palette.tones[0]
         if (!tone) continue
         const alpha = Math.min(
           1,
@@ -159,7 +197,7 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
         ctx.fillStyle = toneColor(
           tone,
           dot.drift,
-          style.lightBase + dot.k * 13,
+          style.lightBase + dot.k * 13 + palette.lightnessShift,
           alpha,
           style.sat
         )
@@ -183,16 +221,16 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
 
       // --- outer: the shell
       const shell = ctx.createRadialGradient(cx, cy, radius * 0.55, cx, cy, radius)
-      shell.addColorStop(0, 'rgba(66,142,255,0)')
-      shell.addColorStop(0.82, 'rgba(66,142,255,0.10)')
-      shell.addColorStop(1, 'rgba(120,200,255,0)')
+      shell.addColorStop(0, `rgba(${palette.shell}, 0)`)
+      shell.addColorStop(0.82, `rgba(${palette.shell}, 0.10)`)
+      shell.addColorStop(1, `rgba(${palette.ring}, 0)`)
       ctx.fillStyle = shell
       ctx.beginPath()
       ctx.arc(cx, cy, radius, 0, Math.PI * 2)
       ctx.fill()
 
       ctx.globalCompositeOperation = 'lighter'
-      ctx.strokeStyle = 'rgba(120,200,255,0.22)'
+      ctx.strokeStyle = `rgba(${palette.ring}, 0.12)`
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.arc(cx, cy, radius, 0, Math.PI * 2)
@@ -201,7 +239,7 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
         ctx.save()
         ctx.translate(cx, cy)
         ctx.rotate(orbit.tilt)
-        ctx.strokeStyle = 'rgba(90,170,255,0.05)'
+        ctx.strokeStyle = `rgba(${palette.orbit}, 0.035)`
         ctx.beginPath()
         ctx.ellipse(0, 0, orbit.radiusX, orbit.radiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
@@ -216,15 +254,15 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
           const pos = orbitPoint(orbit, p.angle)
           if (pos.front !== front) continue
           const tail = orbitPoint(orbit, p.angle - p.trail * Math.sign(p.speed))
-          ctx.strokeStyle = 'rgba(140,215,255,' + p.alpha * 0.5 + ')'
-          ctx.lineWidth = p.size * 0.7
+          ctx.strokeStyle = `rgba(${palette.trail}, ${p.alpha * 0.34})`
+          ctx.lineWidth = p.size * 0.55
           ctx.beginPath()
           ctx.moveTo(cx + tail.x, cy + tail.y)
           ctx.lineTo(cx + pos.x, cy + pos.y)
           ctx.stroke()
-          ctx.fillStyle = 'rgba(210,240,255,' + p.alpha + ')'
+          ctx.fillStyle = `rgba(${palette.particle}, ${p.alpha * 0.62})`
           ctx.beginPath()
-          ctx.arc(cx + pos.x, cy + pos.y, p.size, 0, Math.PI * 2)
+          ctx.arc(cx + pos.x, cy + pos.y, p.size * 0.72, 0, Math.PI * 2)
           ctx.fill()
         }
       }
@@ -246,10 +284,25 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
       ctx.globalCompositeOperation = 'source-over'
     }
 
+    // Setting canvas.width/height clears the bitmap, even at the same size.
+    // Repaint after ResizeObserver runs, including when animation is stopped.
+    redrawAfterResize = draw
+
+    // The palette lives on <html>, so follow it when the theme is switched.
+    const themeWatch = new MutationObserver(() => {
+      palette = readPalette()
+      // A paused loop would otherwise keep the old colours on screen.
+      if (reduceMotion || pausedRef.current || document.hidden) draw()
+    })
+    themeWatch.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    })
+
     // Reduced motion still deserves the picture, just not the movement.
     if (reduceMotion) {
       draw()
-      return () => observer.disconnect()
+      return () => { observer.disconnect(); themeWatch.disconnect() }
     }
 
     let frame = 0
@@ -279,14 +332,7 @@ export function BrainCanvas({ paused, dimmed }: BrainCanvasProps): React.JSX.Ele
     document.addEventListener('visibilitychange', resync)
     window.addEventListener('focus', resync)
 
-    // The palette lives on <html>, so follow it if the theme is ever switched.
-    const themeWatch = new MutationObserver(() => {
-      tones = readTones()
-    })
-    themeWatch.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme']
-    })
+
 
     return () => {
       cancelAnimationFrame(frame)

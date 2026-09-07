@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { GitStatus } from '@shared/types'
+import { useShell } from '../../i18n/useI18n'
 import { WidgetFrame } from './WidgetFrame'
 
 /**
@@ -8,6 +9,7 @@ import { WidgetFrame } from './WidgetFrame'
  * the Gateway's Guardrail.
  */
 export function GitWidget(): React.JSX.Element {
+  const { t } = useShell()
   const [status, setStatus] = useState<GitStatus | null>(null)
 
   const load = useCallback(() => {
@@ -23,23 +25,33 @@ export function GitWidget(): React.JSX.Element {
   }, [load])
 
   if (status && !status.isRepo) {
-    return <WidgetFrame icon="git" title="Git" error={status.error ?? '不是 Git 仓库'} />
+    return (
+      <WidgetFrame
+        icon="git"
+        titleKey="git.title"
+        ring="skills"
+        error={status.error ?? t('git.notRepo')}
+      />
+    )
   }
 
   const dirty = status ? status.staged + status.unstaged + status.untracked : 0
 
   return (
-    <WidgetFrame icon="git" title="Git">
+    <WidgetFrame icon="git" titleKey="git.title" ring="skills">
       <p className="widget-lede">
         {status ? (
           <>
-            <span className="branch">{status.branch ?? 'detached HEAD'}</span>
+            <span className="branch">{status.branch ?? t('git.detached')}</span>
             {status.ahead > 0 && <span className="muted"> ↑{status.ahead}</span>}
             {status.behind > 0 && <span className="muted"> ↓{status.behind}</span>}
-            <span className="muted">{dirty === 0 ? ' · 干净' : ` · ${dirty} 处改动`}</span>
+            <span className="muted">
+              {' · '}
+              {dirty === 0 ? t('git.clean') : t('git.dirty', { count: dirty })}
+            </span>
           </>
         ) : (
-          '加载中…'
+          t('common.loading')
         )}
       </p>
       <ul className="widget-list">
@@ -49,8 +61,8 @@ export function GitWidget(): React.JSX.Element {
             <span className="grow ellipsis">{c.subject}</span>
           </li>
         ))}
-        {status && status.commits.length === 0 && <li className="muted">还没有提交</li>}
       </ul>
+      {status && status.commits.length === 0 && <p className="widget-hint">{t('git.noCommits')}</p>}
     </WidgetFrame>
   )
 }

@@ -73,12 +73,17 @@ export class SkillExecutor {
    * has to emit that event - it never calls the executor directly.
    */
   start(): void {
-    this.unsubscribe ??= this.bus.on('routine:fired', ({ routineId, skillId, args }) => {
+    this.unsubscribe ??= this.bus.on('routine:fired', ({ routineId, target }) => {
+      // Tool targets belong to ToolRoutineRunner; both listen, each takes its own.
+      if (target.kind !== 'skill') return
       void this.run({
-        skillId,
+        skillId: target.skillId,
         routineId,
         trigger: 'routine',
-        ...(args === undefined ? {} : { args })
+        ...(target.args === null ? {} : { args: target.args }),
+        ...(target.agent === null ? {} : { agent: target.agent }),
+        ...(target.model === null ? {} : { model: target.model }),
+        ...(target.effort === null ? {} : { effort: target.effort })
       }).catch(() => {
         /* the failure is already on the run record */
       })

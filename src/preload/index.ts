@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { CH } from '@shared/channels'
 import type {
   ArmsOsBridge,
+  ChatAttachment,
   MemorySearchQuery,
   NewSkillRequest,
   RoutineInput,
@@ -42,7 +43,8 @@ const bridge: ArmsOsBridge = {
     update: (id: string, patch: Partial<RoutineInput>) =>
       ipcRenderer.invoke(CH.routinesUpdate, id, patch),
     remove: (id: string) => ipcRenderer.invoke(CH.routinesRemove, id),
-    exportSystemTask: (id: string) => ipcRenderer.invoke(CH.routinesExport, id)
+    exportSystemTask: (id: string) => ipcRenderer.invoke(CH.routinesExport, id),
+    result: (id: string) => ipcRenderer.invoke(CH.routinesResult, id)
   },
   system: {
     status: () => ipcRenderer.invoke(CH.systemStatus)
@@ -50,7 +52,9 @@ const bridge: ArmsOsBridge = {
   gateway: {
     status: () => ipcRenderer.invoke(CH.gatewayStatus),
     reload: () => ipcRenderer.invoke(CH.gatewayReload),
-    toolCalls: (limit?: number) => ipcRenderer.invoke(CH.gatewayToolCalls, limit)
+    toolCalls: (limit?: number) => ipcRenderer.invoke(CH.gatewayToolCalls, limit),
+    prune: () => ipcRenderer.invoke(CH.gatewayPrune),
+    compact: () => ipcRenderer.invoke(CH.gatewayCompact)
   },
   memory: {
     search: (query: MemorySearchQuery) => ipcRenderer.invoke(CH.memorySearch, query),
@@ -58,10 +62,20 @@ const bridge: ArmsOsBridge = {
     refresh: (opts?: { force?: boolean; writeRouter?: boolean }) =>
       ipcRenderer.invoke(CH.memoryRefresh, opts),
     writeRouter: (dryRun?: boolean) => ipcRenderer.invoke(CH.memoryWriteRouter, dryRun),
-    open: (path: string) => ipcRenderer.invoke(CH.memoryOpen, path)
+    open: (path: string) => ipcRenderer.invoke(CH.memoryOpen, path),
+    chooseRoot: () => ipcRenderer.invoke(CH.memoryChooseRoot),
+    setRoots: (roots: string[]) => ipcRenderer.invoke(CH.memorySetRoots, roots)
   },
   agents: {
     list: () => ipcRenderer.invoke(CH.agentsList)
+  },
+  chat: {
+    history: () => ipcRenderer.invoke(CH.chatHistory),
+    send: (text: string, attachments?: ChatAttachment[]) =>
+      ipcRenderer.invoke(CH.chatSend, text, attachments),
+    pickFiles: () => ipcRenderer.invoke(CH.chatPickFiles),
+    cancel: () => ipcRenderer.invoke(CH.chatCancel),
+    clear: () => ipcRenderer.invoke(CH.chatClear)
   },
   git: {
     status: () => ipcRenderer.invoke(CH.gitStatus)
@@ -70,6 +84,11 @@ const bridge: ArmsOsBridge = {
     minimize: () => ipcRenderer.invoke(CH.windowMinimize),
     maximize: () => ipcRenderer.invoke(CH.windowMaximize),
     close: () => ipcRenderer.invoke(CH.windowClose)
+  },
+  vault: {
+    list: () => ipcRenderer.invoke(CH.vaultList),
+    set: (id: string, secret: string) => ipcRenderer.invoke(CH.vaultSet, id, secret),
+    remove: (id: string) => ipcRenderer.invoke(CH.vaultRemove, id)
   },
   confirmations: {
     pending: () => ipcRenderer.invoke(CH.confirmationsPending),
@@ -88,7 +107,9 @@ const bridge: ArmsOsBridge = {
     toolCalled: (cb) => subscribe(CH.eventToolCalled, cb),
     memoryProgress: (cb) => subscribe(CH.eventMemoryProgress, cb),
     memoryCompleted: (cb) => subscribe(CH.eventMemoryCompleted, cb),
-    windowMaximized: (cb) => subscribe(CH.eventWindowMaximized, cb)
+    windowMaximized: (cb) => subscribe(CH.eventWindowMaximized, cb),
+    chatChunk: (cb) => subscribe(CH.eventChatChunk, cb),
+    chatCompleted: (cb) => subscribe(CH.eventChatCompleted, cb)
   }
 }
 

@@ -114,6 +114,25 @@ describe('MCP over HTTP', () => {
     expect(core.gateway.confirmations.listPending()).toHaveLength(0)
   })
 
+  it('reads audit rows back in the shared shape, not raw database columns', async () => {
+    const c = await connect()
+    await c.callTool({ name: 'demo.search', arguments: { q: 'hello' } })
+
+    const [call] = core.gateway.recentCalls(10)
+    // Guards the bug where snake_case rows were handed straight to the
+    // renderer: it typechecks, then renders "Invalid Date" and "undefinedms".
+    expect(call).toMatchObject({
+      qualifiedName: 'demo.search',
+      connectorId: 'demo',
+      toolName: 'search',
+      outcome: 'succeeded',
+      risk: 'read-only'
+    })
+    expect(call?.args).toEqual({ q: 'hello' })
+    expect(Number.isNaN(Date.parse(call?.startedAt ?? ''))).toBe(false)
+    expect(typeof call?.durationMs).toBe('number')
+  })
+
   it('records every call in the audit table', async () => {
     const c = await connect()
     await c.callTool({ name: 'demo.search', arguments: { q: 'hello' } })

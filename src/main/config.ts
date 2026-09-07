@@ -29,6 +29,10 @@ export interface ArmsConfig {
   confirmationTimeoutMs: number
   /** Loopback port for the MCP endpoint agents attach to. */
   gatewayPort: number
+  /** Days to keep audit rows worth investigating (writes, refusals, failures). */
+  toolCallKeepDays: number
+  /** Days to keep successful read-only calls - mostly widget-refresh noise. */
+  toolCallKeepReadOnlyDays: number
   /**
    * Knowledge-base directories to index. Separate from `workspaceRoot`: the
    * vault is rarely the code workspace. Empty means nothing is indexed.
@@ -77,6 +81,8 @@ export function loadConfig(overrides: ConfigOverrides = {}): ArmsConfig {
     connectorManifestPath: path.join(workspaceRoot, 'connectors', 'manifest.yaml'),
     confirmationTimeoutMs: FIVE_MINUTES,
     gatewayPort: 39217,
+    toolCallKeepDays: 90,
+    toolCallKeepReadOnlyDays: 7,
     memoryRoots: memoryRootsFromEnv(),
     memoryRouterRoot: null,
     memoryExcerptBytes: 8_192,

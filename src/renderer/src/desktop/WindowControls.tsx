@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
+import { useShell } from '../i18n/useI18n'
 import { Icon } from './icons'
 
 /**
- * Replacement for the native title bar, which `frame: false` took away.
+ * The top-right cluster: language, theme, then the window buttons that
+ * `frame: false` took away.
+ *
+ * Language and theme live here rather than buried in Settings because they are
+ * display preferences you change on a whim, and the desktop is where you are
+ * when you want to.
  *
  * The drag strip is a sibling of these buttons rather than their parent: an
  * `-webkit-app-region: drag` region swallows clicks, so anything interactive
@@ -10,6 +16,7 @@ import { Icon } from './icons'
  * get wrong by nesting.
  */
 export function WindowControls(): React.JSX.Element {
+  const { t, locale, setLocale, theme, setTheme } = useShell()
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -22,9 +29,31 @@ export function WindowControls(): React.JSX.Element {
     <div className="window-controls">
       <button
         type="button"
+        className="win-btn wide"
+        title={t('win.language')}
+        aria-label={t('win.language')}
+        onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+      >
+        <Icon name="language" size={14} />
+        <span>{locale === 'zh' ? '中' : 'EN'}</span>
+      </button>
+      <button
+        type="button"
         className="win-btn"
-        title="最小化"
-        aria-label="最小化"
+        title={t(theme === 'dark' ? 'win.themeToLight' : 'win.themeToDark')}
+        aria-label={t(theme === 'dark' ? 'win.themeToLight' : 'win.themeToDark')}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      >
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
+      </button>
+
+      <span className="win-sep" aria-hidden="true" />
+
+      <button
+        type="button"
+        className="win-btn"
+        title={t('win.minimize')}
+        aria-label={t('win.minimize')}
         onClick={() => void window.arms.window.minimize()}
       >
         <Icon name="minimize" size={14} />
@@ -32,8 +61,8 @@ export function WindowControls(): React.JSX.Element {
       <button
         type="button"
         className="win-btn"
-        title={maximized ? '还原' : '最大化'}
-        aria-label={maximized ? '还原' : '最大化'}
+        title={t(maximized ? 'win.restore' : 'win.maximize')}
+        aria-label={t(maximized ? 'win.restore' : 'win.maximize')}
         onClick={() => void window.arms.window.maximize().then(setMaximized)}
       >
         <Icon name={maximized ? 'restore' : 'maximize'} size={14} />
@@ -43,8 +72,8 @@ export function WindowControls(): React.JSX.Element {
         className="win-btn danger"
         // Closing hides to the tray; the scheduler keeps running. Quitting is
         // deliberately only available from the tray menu.
-        title="隐藏到托盘"
-        aria-label="隐藏到托盘"
+        title={t('win.hide')}
+        aria-label={t('win.hide')}
         onClick={() => void window.arms.window.close()}
       >
         <Icon name="close" size={14} />

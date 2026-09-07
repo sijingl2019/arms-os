@@ -37,13 +37,17 @@ export interface ShellSpec {
   speed: number
 }
 
-/** The dense cloud at the middle. */
+/**
+ * The dense cloud at the middle. Tighter than the MVP's relative radius on
+ * purpose: this stage is far bigger than the MVP's 320px box, and the same
+ * spread there reads as scattered specks here rather than as one cloud.
+ */
 export const CORE: ShellSpec = {
-  count: 340,
+  count: 420,
   min: 0,
-  max: 0.63,
+  max: 0.5,
   focal: 1.27,
-  link: 0.17,
+  link: 0.19,
   speed: 0.0008
 }
 

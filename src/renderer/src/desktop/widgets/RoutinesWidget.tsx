@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { RoutineDef } from '@shared/types'
+import { useShell } from '../../i18n/useI18n'
 import type { PanelId } from '../../routes'
 import { WidgetFrame } from './WidgetFrame'
-
-function formatNext(iso: string): string {
-  const at = new Date(iso)
-  const minutes = Math.round((at.getTime() - Date.now()) / 60000)
-  if (minutes < 1) return '即将触发'
-  if (minutes < 60) return `${minutes} 分钟后`
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} 小时后`
-  return at.toLocaleDateString()
-}
 
 /** Enabled routines and when the next one fires. */
 export function RoutinesWidget({
@@ -18,6 +10,7 @@ export function RoutinesWidget({
 }: {
   onOpen: (panel: PanelId) => void
 }): React.JSX.Element {
+  const { t } = useShell()
   const [routines, setRoutines] = useState<RoutineDef[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,15 +31,33 @@ export function RoutinesWidget({
     return () => offs.forEach((off) => off())
   }, [load])
 
+  const formatNext = (iso: string): string => {
+    const at = new Date(iso)
+    const minutes = Math.round((at.getTime() - Date.now()) / 60000)
+    if (minutes < 1) return t('routines.imminent')
+    if (minutes < 60) return t('routines.inMinutes', { count: minutes })
+    if (minutes < 60 * 24) return t('routines.inHours', { count: Math.round(minutes / 60) })
+    return at.toLocaleDateString()
+  }
+
   const enabled = (routines ?? []).filter((r) => r.enabled)
   const upcoming = enabled
     .filter((r): r is RoutineDef & { nextRunAt: string } => r.nextRunAt !== null)
     .sort((a, b) => a.nextRunAt.localeCompare(b.nextRunAt))
 
   return (
-    <WidgetFrame icon="routines" title="Routines" openPanel="Routines" onOpen={onOpen} error={error}>
+    <WidgetFrame
+      icon="routines"
+      titleKey="routines.title"
+      ring="routines"
+      openPanel="Routines"
+      onOpen={onOpen}
+      error={error}
+    >
       <p className="widget-lede">
-        {routines ? `${enabled.length}/${routines.length} 个启用` : '加载中…'}
+        {routines
+          ? t('routines.summary', { enabled: enabled.length, total: routines.length })
+          : t('common.loading')}
       </p>
       <ul className="widget-list">
         {upcoming.slice(0, 4).map((r) => (
@@ -56,8 +67,8 @@ export function RoutinesWidget({
             <span className="muted">{formatNext(r.nextRunAt)}</span>
           </li>
         ))}
-        {routines && upcoming.length === 0 && <li className="muted">没有已排期的 Routine</li>}
       </ul>
+      {routines && upcoming.length === 0 && <p className="widget-hint">{t('routines.none')}</p>}
     </WidgetFrame>
   )
 }

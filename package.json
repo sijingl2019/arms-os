@@ -19,9 +19,12 @@
     "bench:memory": "tsx --tsconfig tsconfig.node.json scripts/bench-memory.mts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.263",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openai/codex-sdk": "^0.153.4",
     "better-sqlite3": "^13.0.3",
     "croner": "^10.0.1",
+    "imapflow": "^1.7.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "yaml": "^2.6.1"

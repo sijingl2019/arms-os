@@ -1,7 +1,9 @@
+import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { ipcMain, shell, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { CH } from '@shared/channels'
 import type {
+  ChatAttachment,
   MemoryIndexResult,
   NewSkillRequest,
   MemorySearchQuery,
@@ -12,6 +14,7 @@ import type {
   SystemTaskExport
 } from '@shared/types'
 import { probeAgents } from '../agents/probe'
+import { createChatSession } from '../chat'
 import type { ArmsCore } from '../core'
 import { readGitStatus } from '../git/status'
 import { writeRouterFiles } from '../memory/router'
@@ -128,15 +131,26 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     return planSystemTask({ routine, workspaceRoot: core.config.workspaceRoot })
   })
 
+  ipcMain.handle(CH.routinesResult, (_e, id: string) => core.routines.result(id) ?? null)
+
   ipcMain.handle(CH.systemStatus, () => buildStatus(core))
 
   ipcMain.handle(CH.gatewayStatus, () => core.gatewayStatus())
   ipcMain.handle(CH.gatewayReload, () => core.gateway.reload())
-  ipcMain.handle(CH.gatewayToolCalls, (_e, limit?: number) =>
-    core.db
-      .prepare('SELECT * FROM tool_calls ORDER BY started_at DESC LIMIT ?')
-      .all(limit ?? 100)
-  )
+  ipcMain.handle(CH.gatewayToolCalls, (_e, limit?: number) => core.gateway.recentCalls(limit))
+  ipcMain.handle(CH.gatewayPrune, () => {
+    const { aged, noise, total } = core.gateway.prune()
+    return { aged, noise, total }
+  })
+  ipcMain.handle(CH.gatewayCompact, () => core.gateway.compact())
+
+  // Ids only. A handler that returned a secret would put it in the renderer,
+  // where any XSS or a devtools console could read it back out.
+  ipcMain.handle(CH.vaultList, () => core.gateway.vault.list())
+  ipcMain.handle(CH.vaultSet, async (_e, id: string, secret: string) => {
+    await core.gateway.vault.set(id, secret)
+  })
+  ipcMain.handle(CH.vaultRemove, (_e, id: string) => core.gateway.vault.remove(id))
 
   ipcMain.handle(CH.memorySearch, (_e, query: MemorySearchQuery) => core.indexer.search(query))
   ipcMain.handle(CH.memoryStatus, () => core.indexer.status())
@@ -164,6 +178,41 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
 
   ipcMain.handle(CH.agentsList, () => probeAgents(core.config.defaultAgent))
 
+  // One conversation per app session, owned here rather than by the renderer so
+  // the prompt sent to the CLI is built from a single transcript.
+  const chat = createChatSession({
+    config: core.config,
+    onChunk: (messageId, chunk) => broadcast(CH.eventChatChunk, { messageId, chunk }),
+    onCompleted: (message) => broadcast(CH.eventChatCompleted, message)
+  })
+
+  ipcMain.handle(CH.chatHistory, () => chat.history())
+  ipcMain.handle(CH.chatSend, (_e, text: string, attachments?: ChatAttachment[]) =>
+    chat.send(String(text ?? ''), Array.isArray(attachments) ? attachments : [])
+  )
+
+  ipcMain.handle(CH.chatPickFiles, async (event): Promise<ChatAttachment[]> => {
+    const win = windowOf(event)
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] })
+      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    if (result.canceled) return []
+
+    return Promise.all(
+      result.filePaths.map(async (file) => ({
+        path: file,
+        name: path.basename(file),
+        // A file that vanished between the picker and here is not worth an
+        // error; the agent will report it when it tries to read it.
+        size: await stat(file)
+          .then((s) => s.size)
+          .catch(() => 0)
+      }))
+    )
+  })
+  ipcMain.handle(CH.chatCancel, () => chat.cancel())
+  ipcMain.handle(CH.chatClear, () => chat.clear())
+
   ipcMain.handle(CH.gitStatus, () => readGitStatus(core.config.workspaceRoot))
 
   // Frameless windows have no native buttons; these are the replacements.
@@ -182,6 +231,21 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     // what keeps the Routine Scheduler alive. Quitting stays tray-menu-only.
     windowOf(event)?.close()
   })
+
+  ipcMain.handle(CH.memoryChooseRoot, async (): Promise<string | null> => {
+    const [parent] = windows()
+    const result = await dialog.showOpenDialog(
+      // Modal to the window when there is one, so the picker cannot be lost
+      // behind the app.
+      parent && !parent.isDestroyed() ? parent : ({} as BrowserWindow),
+      {
+        title: '选择知识库文件夹',
+        properties: ['openDirectory', 'createDirectory']
+      }
+    )
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle(CH.memorySetRoots, (_e, roots: string[]) => core.setMemoryRoots(roots))
 
   ipcMain.handle(CH.confirmationsPending, () => core.gateway.confirmations.listPending())
   ipcMain.handle(CH.confirmationsHistory, (_e, limit?: number) =>
@@ -227,10 +291,16 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.routinesUpdate,
     CH.routinesRemove,
     CH.routinesExport,
+    CH.routinesResult,
     CH.systemStatus,
     CH.gatewayStatus,
     CH.gatewayReload,
     CH.gatewayToolCalls,
+    CH.gatewayPrune,
+    CH.gatewayCompact,
+    CH.vaultList,
+    CH.vaultSet,
+    CH.vaultRemove,
     CH.confirmationsPending,
     CH.confirmationsHistory,
     CH.confirmationsApprove,
@@ -241,6 +311,11 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.memoryWriteRouter,
     CH.memoryOpen,
     CH.agentsList,
+    CH.chatHistory,
+    CH.chatSend,
+    CH.chatPickFiles,
+    CH.chatCancel,
+    CH.chatClear,
     CH.gitStatus,
     CH.windowMinimize,
     CH.windowMaximize,
@@ -248,6 +323,9 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
   ]
 
   return () => {
+    // A chat still streaming would otherwise outlive the window it feeds.
+    chat.cancel()
+
     for (const off of unsubscribes) off()
     for (const channel of channels) ipcMain.removeHandler(channel)
   }

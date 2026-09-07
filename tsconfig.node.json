@@ -32,6 +32,7 @@
     "src/renderer/src/desktop/brain/cloud.ts",
     "src/renderer/src/desktop/brain/field.ts",
     "src/renderer/src/desktop/brain/tones.ts",
+    "src/renderer/src/wallpaper/model.ts",
     "scripts/**/*",
     "tests/**/*",
     "electron.vite.config.ts",

@@ -19,10 +19,16 @@ export const CH = {
   routinesUpdate: 'routines:update',
   routinesRemove: 'routines:remove',
   routinesExport: 'routines:export',
+  routinesResult: 'routines:result',
   systemStatus: 'system:status',
   gatewayStatus: 'gateway:status',
   gatewayReload: 'gateway:reload',
   gatewayToolCalls: 'gateway:tool-calls',
+  gatewayPrune: 'gateway:prune',
+  gatewayCompact: 'gateway:compact',
+  vaultList: 'vault:list',
+  vaultSet: 'vault:set',
+  vaultRemove: 'vault:remove',
   confirmationsPending: 'confirmations:pending',
   confirmationsHistory: 'confirmations:history',
   confirmationsApprove: 'confirmations:approve',
@@ -31,8 +37,15 @@ export const CH = {
   memoryStatus: 'memory:status',
   memoryRefresh: 'memory:refresh',
   memoryWriteRouter: 'memory:write-router',
+  memoryChooseRoot: 'memory:choose-root',
+  memorySetRoots: 'memory:set-roots',
   memoryOpen: 'memory:open',
   agentsList: 'agents:list',
+  chatHistory: 'chat:history',
+  chatSend: 'chat:send',
+  chatPickFiles: 'chat:pick-files',
+  chatCancel: 'chat:cancel',
+  chatClear: 'chat:clear',
   gitStatus: 'git:status',
   windowMinimize: 'window:minimize',
   windowMaximize: 'window:maximize',
@@ -49,7 +62,9 @@ export const CH = {
   eventToolCalled: 'event:tool-called',
   eventMemoryProgress: 'event:memory-progress',
   eventMemoryCompleted: 'event:memory-completed',
-  eventWindowMaximized: 'event:window-maximized'
+  eventWindowMaximized: 'event:window-maximized',
+  eventChatChunk: 'event:chat-chunk',
+  eventChatCompleted: 'event:chat-completed'
 } as const
 
 export type Channel = (typeof CH)[keyof typeof CH]

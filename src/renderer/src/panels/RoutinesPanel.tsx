@@ -1,14 +1,39 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MissedRunPolicy, RoutineDef, SkillMeta } from '@shared/types'
+import type {
+  GatewayToolInfo,
+  MissedRunPolicy,
+  RoutineDef,
+  RoutineTargetInput,
+  SkillMeta
+} from '@shared/types'
 
 const BLANK = {
   name: '',
+  targetKind: 'skill' as 'skill' | 'tool',
   skillId: '',
+  toolName: '',
   cron: '0 9 * * *',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   args: '',
   missedRunPolicy: 'skip' as MissedRunPolicy,
   maxRetries: 0
+}
+
+function describeTarget(r: RoutineDef): string {
+  return r.target.kind === 'tool' ? r.target.toolName : r.target.skillId
+}
+
+/** A tool target takes a JSON object; anything unparseable becomes no arguments. */
+function parseToolArgs(raw: string): Record<string, unknown> {
+  if (!raw.trim()) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 function when(iso: string | null): string {
@@ -23,6 +48,7 @@ function when(iso: string | null): string {
 export function RoutinesPanel(): React.JSX.Element {
   const [routines, setRoutines] = useState<RoutineDef[]>([])
   const [skills, setSkills] = useState<SkillMeta[]>([])
+  const [tools, setTools] = useState<GatewayToolInfo[]>([])
   const [draft, setDraft] = useState({ ...BLANK })
   const [error, setError] = useState<string | null>(null)
   const [exported, setExported] = useState<string | null>(null)
@@ -34,18 +60,27 @@ export function RoutinesPanel(): React.JSX.Element {
   useEffect(() => {
     load()
     void window.arms.skills.list().then(setSkills)
+    // Only tools a schedule may actually reach: an irreversible action cannot
+    // be answered by a cron at 3am, so the main process refuses it anyway.
+    void window.arms.gateway
+      .status()
+      .then((s) => setTools(s.tools.filter((t) => t.risk !== 'write-irreversible')))
     return window.arms.on.routinesUpdated(load)
   }, [load])
 
   async function create(): Promise<void> {
     setError(null)
     try {
+      const target: RoutineTargetInput =
+        draft.targetKind === 'tool'
+          ? { kind: 'tool', toolName: draft.toolName, toolArgs: parseToolArgs(draft.args) }
+          : { kind: 'skill', skillId: draft.skillId, args: draft.args || null }
+
       await window.arms.routines.create({
         name: draft.name,
-        skillId: draft.skillId,
+        target,
         cron: draft.cron,
         timezone: draft.timezone || null,
-        args: draft.args || null,
         missedRunPolicy: draft.missedRunPolicy,
         maxRetries: Number(draft.maxRetries)
       })
@@ -94,20 +129,51 @@ export function RoutinesPanel(): React.JSX.Element {
           />
         </div>
         <div className="field">
-          <label htmlFor="r-skill">Skill</label>
+          <label htmlFor="r-kind">目标类型</label>
           <select
-            id="r-skill"
-            value={draft.skillId}
-            onChange={(e) => setDraft({ ...draft, skillId: e.target.value })}
+            id="r-kind"
+            value={draft.targetKind}
+            onChange={(e) =>
+              setDraft({ ...draft, targetKind: e.target.value as 'skill' | 'tool', args: '' })
+            }
           >
-            <option value="">choose…</option>
-            {skills.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.id}
-              </option>
-            ))}
+            <option value="skill">Skill（会调用 agent）</option>
+            <option value="tool">Gateway tool（直连，不花 agent）</option>
           </select>
         </div>
+        {draft.targetKind === 'skill' ? (
+          <div className="field">
+            <label htmlFor="r-skill">Skill</label>
+            <select
+              id="r-skill"
+              value={draft.skillId}
+              onChange={(e) => setDraft({ ...draft, skillId: e.target.value })}
+            >
+              <option value="">choose…</option>
+              {skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor="r-tool">Tool</label>
+            <select
+              id="r-tool"
+              value={draft.toolName}
+              onChange={(e) => setDraft({ ...draft, toolName: e.target.value })}
+            >
+              <option value="">choose…</option>
+              {tools.map((t) => (
+                <option key={t.qualifiedName} value={t.qualifiedName}>
+                  {t.qualifiedName} [{t.risk}]
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="r-cron">Cron</label>
           <input
@@ -126,7 +192,9 @@ export function RoutinesPanel(): React.JSX.Element {
           />
         </div>
         <div className="field">
-          <label htmlFor="r-args">Args</label>
+          <label htmlFor="r-args">
+            {draft.targetKind === 'tool' ? 'Args（JSON）' : 'Args'}
+          </label>
           <input
             id="r-args"
             value={draft.args}
@@ -156,7 +224,11 @@ export function RoutinesPanel(): React.JSX.Element {
             onChange={(e) => setDraft({ ...draft, maxRetries: Number(e.target.value) })}
           />
         </div>
-        <button className="primary" onClick={() => void create()} disabled={!draft.skillId}>
+        <button
+          className="primary"
+          onClick={() => void create()}
+          disabled={draft.targetKind === 'skill' ? !draft.skillId : !draft.toolName}
+        >
           Add routine
         </button>
       </div>
@@ -191,7 +263,9 @@ export function RoutinesPanel(): React.JSX.Element {
                   />
                 </td>
                 <td>{r.name}</td>
-                <td className="mono">{r.skillId}</td>
+                <td className="mono">
+                  {r.target.kind === 'tool' && <span className="tag">tool</span>} {describeTarget(r)}
+                </td>
                 <td className="mono">{r.cron}</td>
                 <td>{r.timezone ?? 'local'}</td>
                 <td>{when(r.nextRunAt)}</td>

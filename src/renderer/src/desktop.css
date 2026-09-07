@@ -1,23 +1,20 @@
-/**
- * The desktop shell: frameless chrome, widget columns, the brain stage, the
- * Dock and the panel overlay. Panel internals keep using theme.css.
+/*
+ * The desktop shell: frameless chrome, widget columns, the particle stage, the
+ * Dock and the panel overlay. Every colour comes from theme.css.
  */
 
 .app {
   position: relative;
   height: 100vh;
   overflow: hidden;
-  /* Off-centre glows over a deep ground, so the cloud in the middle sits in a
-     lit space rather than on a flat backdrop. Defined in theme.css so the light
-     theme can swap the whole stack. */
-  background: var(--wallpaper);
+  isolation: isolate;
+  background: var(--bg);
 }
-
-/* ------------------------------------------------------------ window chrome */
 
 /* Chrome is an app surface, not a document: dragging a Dock label or a widget
    heading should never start a text selection. Panel content stays selectable,
    because run output and paths are things people copy. */
+
 .desktop,
 .dock,
 .window-controls,
@@ -25,15 +22,18 @@
   user-select: none;
 }
 
+/* ------------------------------------------------------------ window chrome */
+
 /* `frame: false` removed the title bar, so this strip is the only thing the
    window can be dragged by. It sits above the overlay so dragging keeps
    working while a panel is open. */
+
 .drag-strip {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 44px;
   z-index: 30;
   -webkit-app-region: drag;
 }
@@ -41,35 +41,54 @@
 .window-controls {
   position: absolute;
   top: 7px;
-  right: 12px;
+  right: 20px;
   z-index: 40;
   display: flex;
-  gap: 6px;
-  /* Sits on top of the drag region, which would otherwise eat the clicks. */
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--chrome-surface);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: inset 0 1px 0 var(--glass-edge),var(--shadow-small);
   -webkit-app-region: no-drag;
 }
 
 .win-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 26px;
   height: 26px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--hover);
-  color: var(--muted);
+  padding: 0 6px;
+  border-color: transparent;
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.win-btn.wide {
+  gap: 4px;
+  padding: 0 7px;
 }
 
 .win-btn:hover:not(:disabled) {
-  background: var(--hover);
   border-color: transparent;
+  background: var(--surface-2);
   color: var(--text);
 }
 
 .win-btn.danger:hover:not(:disabled) {
-  background: #d33a32;
+  background: var(--danger-fill);
   color: #fff;
+}
+
+.win-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 5px;
+  background: var(--line-soft);
 }
 
 /* ---------------------------------------------------------------- desktop */
@@ -78,17 +97,17 @@
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: minmax(228px, 300px) 1fr minmax(228px, 300px);
-  gap: 20px;
-  /* Top gap clears the drag strip, bottom gap clears the Dock. */
-  padding: 52px 22px 116px;
+  grid-template-columns: minmax(270px,330px) minmax(0,1fr) minmax(270px,330px);
+  gap: 24px;
+  padding: 66px 28px 114px;
 }
 
 .widget-column {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   min-height: 0;
+  min-width: 0;
 }
 
 .widget {
@@ -96,154 +115,94 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 14px 14px;
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  background: var(--glass);
-  backdrop-filter: blur(16px) saturate(130%);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .widget-head {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
+  gap: 9px;
+  min-height: var(--header-h);
+  padding: 0 12px 0 17px;
+  color: var(--text-dim);
 }
 
 .widget-head h3 {
   margin: 0;
   color: var(--text);
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.widget-open {
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px;
+  border-color: var(--line-soft);
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.widget-open:hover:not(:disabled) {
+  border-color: transparent;
+  background: none;
+  color: var(--accent-soft);
+}
+
+.widget-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 16px;
+  overflow: auto;
 }
 
 .widget-lede {
-  margin: 10px 0 8px;
+  margin: 0 0 8px;
   color: var(--text);
   font-size: 12px;
 }
 
+.widget-hint,
 .widget-error {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.widget-error {
   color: var(--bad);
-  font-size: 12px;
-}
-
-.widget-placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.widget-placeholder .tag {
-  align-self: flex-start;
-}
-
-.widget-placeholder p {
-  margin: 0;
-  line-height: 1.6;
 }
 
 .widget-list {
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow: auto;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .widget-list li {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 4px 0;
-  border-top: 1px solid var(--glass-line);
-  color: var(--text);
+  padding: 5px 0;
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-dim);
 }
 
 .widget-list li:first-child {
   border-top: none;
 }
 
-.grow {
-  flex: 1;
-  min-width: 0;
-}
-
-.ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.muted {
-  color: var(--muted);
-}
-
 .branch {
+  color: var(--accent-soft);
   font-weight: 600;
-  color: var(--accent);
 }
 
-.dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--line);
-}
-
-.dot.ok {
-  background: var(--ok);
-}
-.dot.warn {
-  background: var(--warn);
-}
-.dot.bad {
-  background: var(--bad);
-}
-
-/* Chromeless buttons: theme.css gives every button a border and a panel
-   background, which is wrong everywhere on the desktop. */
-.ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  background: none;
-  color: var(--muted);
-}
-
-.ghost:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--hover);
-  color: var(--text);
-}
-
-.ghost.icon-only {
-  padding: 4px;
-}
-
-.linkish {
-  padding: 0 2px;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.linkish:hover:not(:disabled) {
-  border-color: transparent;
-}
-
-/* ------------------------------------------------------------ brain stage */
+/* ------------------------------------------------------------ particle core */
 
 .stage {
   position: relative;
@@ -255,43 +214,58 @@
 
 .brain-canvas {
   position: absolute;
-  inset: 0;
+  top: 14%;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: 65%;
 }
 
-/* A round hit area over the brain, so clicking the glow opens search but
-   clicking the empty corners of the stage does not. */
-.brain-hit {
+/* The core and its visible glass search capsule share one hit area. */
+
+.core-hit {
   position: absolute;
-  top: 8%;
-  bottom: 8%;
+  top: 22%;
+  bottom: 20%;
   left: 50%;
+  width: 100%;
+  max-width: 360px;
   transform: translateX(-50%);
-  aspect-ratio: 1;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 4%;
+  padding-bottom: 0;
   border: none;
   border-radius: 50%;
   background: none;
+  box-shadow: none;
 }
 
-.brain-hit:hover:not(:disabled) {
+.core-hit:hover:not(:disabled) {
   border-color: transparent;
+  background: none;
+  box-shadow: none;
 }
 
-.brain-hint {
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+.core-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--glass-sheen),var(--surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 var(--glass-edge),var(--shadow-small);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 1;
+  transition: background 180ms ease,box-shadow 180ms ease;
 }
 
-.brain-hit:hover .brain-hint,
-.brain-hit:focus-visible .brain-hint {
+.core-hit:hover .core-hint,
+.core-hit:focus-visible .core-hint {
   opacity: 1;
 }
 
@@ -307,41 +281,40 @@
 }
 
 .search-box {
-  width: min(560px, 94%);
-  max-height: 78%;
+  width: min(560px,100%);
+  max-height: 84%;
   display: flex;
   flex-direction: column;
-  padding: 10px;
-  border: 1px solid var(--glass-edge);
-  border-radius: 16px;
-  background: var(--glass-strong);
-  backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: var(--shadow-lift);
+  padding: 14px;
+  border-radius: 26px;
+  background: var(--glass-sheen),var(--content-surface);
+  animation: glass-appear 240ms var(--ease-glass);
 }
 
 .search-field {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px;
-  color: var(--muted);
+  padding: 2px 4px;
+  color: var(--text-faint);
 }
 
 .search-field input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: none;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .search-field input:focus {
-  outline: none;
+  border: none;
 }
 
 .search-note {
-  margin: 8px 6px;
-  color: var(--muted);
-  font-size: 12px;
+  margin: 8px 4px;
+  color: var(--text-faint);
+  font-size: 11.5px;
 }
 
 .search-results {
@@ -354,254 +327,542 @@
 .search-results li button {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
   width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: 9px;
+  padding: 6px 8px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
   background: none;
   text-align: left;
 }
 
 .search-results li button:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--hover);
+  background: var(--surface-2);
 }
 
 .hit-title {
+  color: var(--text);
+  font-size: 12px;
   font-weight: 600;
 }
 
 .hit-path,
 .hit-snippet {
-  color: var(--muted);
-  font-size: 11px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 10.5px;
 }
 
 /* ---------------------------------------------------------------- overlay */
 
 .overlay {
   position: absolute;
-  inset: 0;
+  inset: 56px 24px 110px;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  /* Clears the drag strip at the top and the Dock at the bottom. */
-  padding: 40px 0 104px;
-  background: var(--scrim);
-  backdrop-filter: blur(12px);
+  overflow: hidden;
+  border: 1px solid var(--glass-edge);
+  border-radius: 28px;
+  background: var(--glass-sheen),var(--surface);
+  box-shadow: inset 0 1px 0 var(--glass-edge),inset 0 -1px 0 var(--glass-rim),var(--shadow);
+  backdrop-filter: blur(36px) saturate(135%);
+  -webkit-backdrop-filter: blur(36px) saturate(135%);
+  animation: glass-appear 260ms var(--ease-glass);
 }
 
 .overlay-bar {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
+  gap: 18px;
+  min-height: 68px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
 }
 
 .overlay-bar h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.overlay-bar .status-line {
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 .overlay-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 24px;
 }
 
 /* --------------------------------------------------------------- settings */
 
 .settings-split {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 20px;
+  grid-template-columns: 210px minmax(0,1fr);
+  gap: 32px;
   align-items: start;
 }
 
 .settings-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   position: sticky;
   top: 0;
+  padding: 8px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 22px;
+  background: var(--surface-2);
 }
 
 .settings-nav-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border-color: transparent;
+  border-radius: 15px;
   background: none;
   text-align: left;
 }
 
+.settings-nav-item strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-nav-hint {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .settings-nav-item:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--hover);
+  background: var(--surface-2);
 }
 
 .settings-nav-item.on {
-  background: rgba(76, 154, 255, 0.14);
-  border-color: rgba(76, 154, 255, 0.3);
-}
-
-.settings-nav-item .muted {
-  font-size: 11px;
+  border-color: var(--glass-edge);
+  background: var(--content-surface);
+  box-shadow: var(--shadow-small);
 }
 
 .settings-panel {
   min-width: 0;
-  max-width: 780px;
+  max-width: 800px;
 }
 
 .settings-h {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
 }
 
 .settings-note {
-  margin: 0 0 4px;
-  color: var(--muted);
+  margin: 8px 0 0;
+  max-width: 66ch;
+  color: var(--text-dim);
   font-size: 12px;
   line-height: 1.7;
 }
 
 .settings-panel section {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: 20px;
+  background: var(--content-surface);
 }
 
-.settings-panel .label {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: var(--muted);
-  font-size: 12px;
+.settings-panel section > .label {
+  margin-bottom: 10px;
 }
 
-/* The environment variable that owns a read-only value. */
-.env-note {
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: 10px;
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
 }
 
-.agent-list,
-.root-list {
+.settings-row-label {
+  width: 72px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.agent-list {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
-.agent-list li,
-.root-list li {
+.agent-list li {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
 }
 
-.agent-list li:first-child,
-.root-list li:first-child {
+.agent-list li:first-child {
   border-top: none;
 }
 
-.agent-list .tag {
+.agent-list strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-list .pill {
   margin-left: 6px;
+}
+
+/* An unconfigured widget's badge is the way in, so it has to look like one -
+   an identical-looking label would read as a dead end. */
+
+.pill-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  cursor: pointer;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent-line);
+  font: inherit;
+  font-size: 10.5px;
+  transition: color 180ms ease,border-color 180ms ease;
+}
+
+/* Widget lists are dense pointers, not prose: no bullets, no indent. */
+
+.plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plain-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 0;
+}
+
+.pill-action:hover,
+.pill-action:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------- chat */
+
+/*
+ * The conversation window hangs directly off the Dock rather than covering the
+ * desktop: it is a thing you glance at while working, not a place you go.
+ */
+
+.chat-dock {
+  position: absolute;
+  bottom: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92%);
+  height: min(460px, 62vh);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.chat-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.chat-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  overflow: auto;
+}
+
+.chat-empty {
+  margin: auto;
+}
+
+.chat-row {
+  display: flex;
+}
+
+/* The agent on the left, you on the right - the arrangement every chat app
+   uses, so nobody has to learn which side is which. */
+
+.chat-agent {
+  justify-content: flex-start;
+}
+
+.chat-user {
+  justify-content: flex-end;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: 8px 11px;
+  border-radius: 14px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-user .chat-bubble {
+  background: var(--accent-fill);
+  border-bottom-right-radius: 4px;
+  color: #fff;
+}
+
+.chat-agent .chat-bubble {
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.failed {
+  border: 1px solid var(--bad);
+  color: var(--bad);
+}
+
+/* Files already sent, listed inside the bubble that carried them. */
+
+.chat-files {
+  margin: 0 0 6px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--line-soft);
+  list-style: none;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.chat-files li,
+.chat-pending li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* Files queued for the next message, above the input row. */
+
+.chat-pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 12px;
+  list-style: none;
+}
+
+.chat-pending li {
+  max-width: 210px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.chip-x {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-faint);
+}
+
+.chip-x:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface-3);
+  color: var(--bad);
+}
+
+.chat-notice {
+  margin: 0 12px;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+.chat-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.chat-input textarea {
+  flex: 1;
+  max-height: 96px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.chat-send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: #fff;
+}
+
+.chat-send:hover:not(:disabled) {
+  border-color: transparent;
+  filter: brightness(1.12);
+  color: #fff;
+}
+
+.chat-send.stop {
+  background: var(--danger-fill);
 }
 
 /* ------------------------------------------------------------------- dock */
 
+/*
+ * A macOS-style tray of colourful app tiles: translucent, rounded, with the
+ * icons growing on hover and a dot under whatever is open.
+ */
+
 .dock {
   position: absolute;
-  bottom: 18px;
+  bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
+  align-items: flex-end;
+  gap: 9px;
+  padding: 11px 14px 14px;
+  border-radius: 28px;
+  background: var(--glass-sheen),var(--chrome-surface);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
   border: 1px solid var(--glass-edge);
-  border-radius: 20px;
-  background: var(--glass);
-  backdrop-filter: blur(22px) saturate(150%);
-  box-shadow: var(--shadow-lift);
+  box-shadow: inset 0 1px 1px var(--glass-edge),inset 0 -1px 1px var(--glass-rim),var(--shadow);
 }
 
 .dock-sep {
   width: 1px;
-  height: 26px;
-  margin: 0 4px;
-  background: var(--glass-edge);
+  height: 34px;
+  margin: 0 4px 6px;
+  background: var(--line);
 }
 
 .dock-item {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
+  flex: none;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  border: none;
+  border-radius: 13px;
   background: none;
-  color: var(--muted);
-  transition:
-    transform 0.16s ease,
-    background 0.16s ease,
-    color 0.16s ease;
+  box-shadow: none;
+  transition: none;
+}
+
+.dock-item .app-icon {
+  transition: transform 240ms var(--ease-glass),filter 200ms ease;
+  filter: drop-shadow(0 3px 4px var(--icon-shadow));
 }
 
 .dock-item:hover:not(:disabled) {
-  transform: translateY(-7px) scale(1.1);
-  border-color: transparent;
-  background: var(--hover);
-  color: var(--text);
+  background: none;
+  box-shadow: none;
 }
 
-.dock-item.active {
-  color: var(--text);
-  background: rgba(76, 154, 255, 0.16);
+.dock-item:hover .app-icon,
+.dock-item:focus-visible .app-icon {
+  transform: translateY(-7px) scale(1.12);
+  filter: drop-shadow(0 8px 9px var(--icon-shadow));
 }
 
-/* The running-app indicator, same idea as the dot under a macOS Dock icon. */
+/* The running-app indicator, the same idea as the dot under a macOS Dock icon. */
+
 .dock-item.active::after {
   content: '';
   position: absolute;
-  bottom: -3px;
+  bottom: -4px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--text-dim);
 }
 
 .dock-label {
   position: absolute;
-  bottom: calc(100% + 12px);
-  padding: 3px 9px;
+  bottom: calc(100% + 16px);
+  padding: 5px 11px;
   border: 1px solid var(--glass-edge);
-  border-radius: 8px;
-  background: var(--glass-strong);
+  border-radius: 10px;
+  background: var(--content-surface);
+  box-shadow: var(--shadow-small);
   color: var(--text);
   font-size: 11px;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.14s ease;
+  transition: opacity 160ms ease;
 }
 
 .dock-item:hover .dock-label,
@@ -611,49 +872,255 @@
 
 .dock-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: -2px;
+  right: -2px;
   min-width: 16px;
   padding: 0 4px;
+  border: 1.5px solid var(--surface-solid);
   border-radius: 999px;
-  background: var(--bad);
+  background: var(--danger-fill);
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 14px;
   text-align: center;
 }
 
-/* ------------------------------------------------------------- responsive */
+/* Shell details and small-window layouts. */
 
-@media (max-width: 1180px) {
+.desktop-wallpaper {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.shell-brand {
+  position: absolute;
+  top: 15px;
+  left: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 10px var(--surface-solid);
+}
+
+.shell-brand span {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.widget .empty {
+  padding: 13px;
+  font-size: 11.5px;
+}
+
+.widget-head > svg {
+  color: var(--widget-tone,var(--accent));
+}
+
+.widget[data-ring='applications'] {
+  --widget-tone: var(--tone-apps);
+}
+
+.widget[data-ring='routines'] {
+  --widget-tone: var(--tone-routines);
+}
+
+.widget[data-ring='skills'] {
+  --widget-tone: var(--tone-skills);
+}
+
+.widget[data-ring='memory'] {
+  --widget-tone: var(--tone-memory);
+}
+
+.chat-dock {
+  background: var(--glass-sheen),var(--content-surface);
+}
+
+.chat-send {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+.chip-x {
+  min-height: 20px;
+  min-width: 20px;
+}
+
+.core-hit:hover .core-hint {
+  background: var(--content-surface);
+  box-shadow: var(--shadow);
+}
+
+@keyframes glass-appear {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (max-width:1180px) {
   .desktop {
-    grid-template-columns: minmax(200px, 250px) 1fr minmax(200px, 250px);
+    grid-template-columns: minmax(240px,290px) minmax(0,1fr) minmax(240px,290px);
+    gap: 16px;
+    padding: 58px 18px 112px;
+  }
+  .widget-column {
     gap: 14px;
-    padding: 48px 14px 108px;
+  }
+  .widget-body {
+    padding: 0 12px 12px;
+  }
+  .widget-head {
+    padding-left: 13px;
+  }
+  .overlay {
+    inset: 52px 16px 110px;
   }
 }
 
-@media (max-width: 980px) {
-  .widget {
+@media (max-width:860px) {
+  .desktop {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    grid-template-rows: 230px auto;
+    overflow: auto;
+    padding: 56px 16px 114px;
+  }
+  .stage {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .brain-canvas {
+    left: 20%;
+    width: 60%;
+    top: 0;
+    height: 90%;
+  }
+  .core-hit {
+    top: 5%;
+    bottom: 4%;
+    width: min(100%,330px);
+  }
+  .widget-column {
+    min-height: 620px;
+  }
+  .settings-split {
+    grid-template-columns: 160px minmax(0,1fr);
+    gap: 18px;
+  }
+  .overlay-body {
+    padding: 18px;
+  }
+}
+
+@media (max-width:600px) {
+  .desktop {
+    grid-template-columns: minmax(0,1fr);
+  }
+  .widget-column {
+    min-height: 680px;
+  }
+  .window-controls {
+    right: 10px;
+  }
+  .shell-brand {
+    left: 17px;
+  }
+  .shell-brand span {
+    display: none;
+  }
+  .dock {
+    gap: 3px;
+    padding: 8px 9px 12px;
+    bottom: 16px;
+    border-radius: 23px;
+  }
+  .dock-item {
+    width: 34px;
+    height: 36px;
+  }
+  .dock-item .app-icon {
+    width: 33px;
+    height: 33px;
+  }
+  .dock-sep {
+    margin: 0 2px 3px;
+    height: 27px;
+  }
+  .overlay {
+    inset: 52px 10px 91px;
+    border-radius: 23px;
+  }
+  .overlay-bar {
+    gap: 8px;
+    min-height: 60px;
     padding: 10px 12px;
-    font-size: 11px;
   }
-
-  .widget-head h3 {
-    font-size: 12px;
+  .overlay-bar h2 {
+    font-size: 16px;
+  }
+  .overlay-bar .status-line {
+    display: none;
+  }
+  .settings-split {
+    grid-template-columns: minmax(0,1fr);
+    gap: 20px;
+  }
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 5px;
+  }
+  .settings-nav-item {
+    flex: 1;
+    align-items: center;
+    padding: 8px;
+  }
+  .settings-nav-hint {
+    display: none;
+  }
+  .settings-panel section {
+    padding: 16px;
+  }
+  .settings-h {
+    font-size: 22px;
+  }
+  .chat-dock {
+    bottom: 91px;
+    height: min(460px,calc(100vh - 145px));
   }
 }
 
-/* The brain is the one thing here that moves on its own. */
-@media (prefers-reduced-motion: reduce) {
-  .dock-item,
-  .dock-label,
-  .brain-hint {
-    transition: none;
-  }
-
-  .dock-item:hover:not(:disabled) {
+@media (prefers-reduced-motion:reduce) {
+  .dock-item:hover .app-icon,.dock-item:focus-visible .app-icon {
     transform: none;
   }
+}
+
+/* Glass chrome must remain readable even over a dark photo in light mode. */
+
+.widget.glass {
+  background: var(--glass-sheen), var(--widget-surface);
+}
+
+.shell-brand {
+  top: 9px;
+  padding: 5px 10px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--content-surface);
+  backdrop-filter: blur(16px);
 }

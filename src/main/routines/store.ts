@@ -5,14 +5,21 @@ import type {
   MissedRunPolicy,
   RoutineDef,
   RoutineInput,
-  RoutineLastStatus
+  RoutineLastStatus,
+  RoutineResult,
+  RoutineTarget,
+  RoutineTargetInput,
+  RunStatus
 } from '@shared/types'
 import type { Db } from '../db'
 
 interface RoutineRow {
   id: string
   name: string
-  skill_id: string
+  target_kind: string
+  skill_id: string | null
+  tool_name: string | null
+  tool_args: string | null
   cron: string
   timezone: string | null
   args: string | null
@@ -31,17 +38,39 @@ interface RoutineRow {
   updated_at: string
 }
 
+function parseToolArgs(raw: string | null): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function toTarget(row: RoutineRow): RoutineTarget {
+  if (row.target_kind === 'tool') {
+    return { kind: 'tool', toolName: row.tool_name ?? '', toolArgs: parseToolArgs(row.tool_args) }
+  }
+  return {
+    kind: 'skill',
+    skillId: row.skill_id ?? '',
+    args: row.args,
+    agent: row.agent as AgentId | null,
+    model: row.model,
+    effort: row.effort
+  }
+}
+
 function toDef(row: RoutineRow): RoutineDef {
   return {
     id: row.id,
     name: row.name,
-    skillId: row.skill_id,
+    target: toTarget(row),
     cron: row.cron,
     timezone: row.timezone,
-    args: row.args,
-    agent: row.agent as AgentId | null,
-    model: row.model,
-    effort: row.effort,
     enabled: row.enabled === 1,
     missedRunPolicy: row.missed_run_policy as MissedRunPolicy,
     maxRetries: row.max_retries,
@@ -75,20 +104,50 @@ export function nextOccurrence(
 }
 
 export interface RoutineValidationIssue {
-  field: keyof RoutineInput
+  field: keyof RoutineInput | 'target'
   message: string
 }
+
+/**
+ * Resolves whether a target may be scheduled at all.
+ *
+ * Injected rather than imported so the store stays pure persistence, and
+ * supplied at construction rather than per call so no write path can skip it -
+ * the risk rule for tool targets must not be bypassable.
+ */
+export type TargetChecker = (target: RoutineTargetInput) => string | null
 
 /**
  * Reject a routine before it is stored. A cron expression that only fails at
  * tick time would be invisible until the trigger silently never fired - the
  * exact failure mode 架构规范 §6.1 calls the easiest trap to fall into.
  */
-export function validateRoutine(input: RoutineInput): RoutineValidationIssue[] {
+export function validateRoutine(
+  input: RoutineInput,
+  checkTarget?: TargetChecker
+): RoutineValidationIssue[] {
   const issues: RoutineValidationIssue[] = []
 
   if (!input.name?.trim()) issues.push({ field: 'name', message: 'name is required' })
-  if (!input.skillId?.trim()) issues.push({ field: 'skillId', message: 'skillId is required' })
+
+  const target = input.target
+  if (!target) {
+    issues.push({ field: 'target', message: 'target is required' })
+  } else if (target.kind === 'skill') {
+    if (!target.skillId?.trim()) issues.push({ field: 'target', message: 'skillId is required' })
+  } else if (target.kind === 'tool') {
+    if (!target.toolName?.trim()) issues.push({ field: 'target', message: 'toolName is required' })
+    else if (!target.toolName.includes('.')) {
+      issues.push({ field: 'target', message: 'toolName must be "<connector>.<tool>"' })
+    }
+  } else {
+    issues.push({ field: 'target', message: 'target.kind must be "skill" or "tool"' })
+  }
+
+  if (target && checkTarget) {
+    const problem = checkTarget(target)
+    if (problem) issues.push({ field: 'target', message: problem })
+  }
 
   if (!input.cron?.trim()) {
     issues.push({ field: 'cron', message: 'cron is required' })
@@ -129,9 +188,46 @@ export class RoutineValidationError extends Error {
  */
 export class RoutineStore {
   private readonly db: Db
+  private readonly checkTarget: TargetChecker | undefined
 
-  constructor(db: Db) {
+  constructor(db: Db, checkTarget?: TargetChecker) {
     this.db = db
+    this.checkTarget = checkTarget
+  }
+
+  /** Flatten a target into the row's columns. */
+  private targetColumns(target: RoutineTargetInput): {
+    target_kind: string
+    skill_id: string | null
+    tool_name: string | null
+    tool_args: string | null
+    args: string | null
+    agent: string | null
+    model: string | null
+    effort: string | null
+  } {
+    if (target.kind === 'tool') {
+      return {
+        target_kind: 'tool',
+        skill_id: null,
+        tool_name: target.toolName.trim(),
+        tool_args: JSON.stringify(target.toolArgs ?? {}),
+        args: null,
+        agent: null,
+        model: null,
+        effort: null
+      }
+    }
+    return {
+      target_kind: 'skill',
+      skill_id: target.skillId.trim(),
+      tool_name: null,
+      tool_args: null,
+      args: target.args ?? null,
+      agent: target.agent ?? null,
+      model: target.model ?? null,
+      effort: target.effort ?? null
+    }
   }
 
   list(): RoutineDef[] {
@@ -159,65 +255,46 @@ export class RoutineStore {
   }
 
   create(input: RoutineInput, now = new Date()): RoutineDef {
-    const issues = validateRoutine(input)
+    const issues = validateRoutine(input, this.checkTarget)
     if (issues.length > 0) throw new RoutineValidationError(issues)
 
     const timezone = input.timezone ?? null
     const enabled = input.enabled ?? true
     const stamp = now.toISOString()
 
-    const def: RoutineDef = {
-      id: randomUUID(),
-      name: input.name.trim(),
-      skillId: input.skillId.trim(),
-      cron: input.cron.trim(),
-      timezone,
-      args: input.args ?? null,
-      agent: input.agent ?? null,
-      model: input.model ?? null,
-      effort: input.effort ?? null,
-      enabled,
-      missedRunPolicy: input.missedRunPolicy ?? 'skip',
-      maxRetries: input.maxRetries ?? 0,
-      retryDelayMs: input.retryDelayMs ?? 60_000,
-      nextRunAt: enabled ? nextOccurrence(input.cron.trim(), timezone, now) : null,
-      lastRunAt: null,
-      lastStatus: null,
-      lastRunId: null,
-      createdAt: stamp,
-      updatedAt: stamp
-    }
+    const columns = this.targetColumns(input.target)
+    const id = randomUUID()
 
     this.db
       .prepare(
-        `INSERT INTO routines (id, name, skill_id, cron, timezone, args, agent, model, effort,
-                               enabled, missed_run_policy, max_retries, retry_delay_ms,
+        `INSERT INTO routines (id, name, target_kind, skill_id, tool_name, tool_args, cron,
+                               timezone, args, agent, model, effort, enabled,
+                               missed_run_policy, max_retries, retry_delay_ms,
                                next_run_at, last_run_at, last_status, last_run_id,
                                created_at, updated_at)
-         VALUES (@id, @name, @skill_id, @cron, @timezone, @args, @agent, @model, @effort,
-                 @enabled, @missed_run_policy, @max_retries, @retry_delay_ms,
+         VALUES (@id, @name, @target_kind, @skill_id, @tool_name, @tool_args, @cron,
+                 @timezone, @args, @agent, @model, @effort, @enabled,
+                 @missed_run_policy, @max_retries, @retry_delay_ms,
                  @next_run_at, NULL, NULL, NULL, @created_at, @updated_at)`
       )
       .run({
-        id: def.id,
-        name: def.name,
-        skill_id: def.skillId,
-        cron: def.cron,
-        timezone: def.timezone,
-        args: def.args,
-        agent: def.agent,
-        model: def.model,
-        effort: def.effort,
-        enabled: def.enabled ? 1 : 0,
-        missed_run_policy: def.missedRunPolicy,
-        max_retries: def.maxRetries,
-        retry_delay_ms: def.retryDelayMs,
-        next_run_at: def.nextRunAt,
-        created_at: def.createdAt,
-        updated_at: def.updatedAt
+        id,
+        name: input.name.trim(),
+        ...columns,
+        cron: input.cron.trim(),
+        timezone,
+        enabled: enabled ? 1 : 0,
+        missed_run_policy: input.missedRunPolicy ?? 'skip',
+        max_retries: input.maxRetries ?? 0,
+        retry_delay_ms: input.retryDelayMs ?? 60_000,
+        next_run_at: enabled ? nextOccurrence(input.cron.trim(), timezone, now) : null,
+        created_at: stamp,
+        updated_at: stamp
       })
 
-    return def
+    const created = this.get(id)
+    if (!created) throw new Error('routine vanished immediately after insert')
+    return created
   }
 
   /**
@@ -228,22 +305,23 @@ export class RoutineStore {
     const current = this.get(id)
     if (!current) throw new Error(`unknown routine: ${id}`)
 
+    // A patch may replace the target wholesale, or leave it untouched. Merging
+    // *within* a target kind is deliberately not supported: switching a routine
+    // from a skill to a tool while half its old fields survive is a bug factory.
+    const target: RoutineTargetInput = patch.target ?? current.target
+
     const merged: RoutineInput = {
       name: patch.name ?? current.name,
-      skillId: patch.skillId ?? current.skillId,
+      target,
       cron: patch.cron ?? current.cron,
       timezone: patch.timezone === undefined ? current.timezone : patch.timezone,
-      args: patch.args === undefined ? current.args : patch.args,
-      agent: patch.agent === undefined ? current.agent : patch.agent,
-      model: patch.model === undefined ? current.model : patch.model,
-      effort: patch.effort === undefined ? current.effort : patch.effort,
       enabled: patch.enabled ?? current.enabled,
       missedRunPolicy: patch.missedRunPolicy ?? current.missedRunPolicy,
       maxRetries: patch.maxRetries ?? current.maxRetries,
       retryDelayMs: patch.retryDelayMs ?? current.retryDelayMs
     }
 
-    const issues = validateRoutine(merged)
+    const issues = validateRoutine(merged, this.checkTarget)
     if (issues.length > 0) throw new RoutineValidationError(issues)
 
     const timezone = merged.timezone ?? null
@@ -260,23 +338,21 @@ export class RoutineStore {
     this.db
       .prepare(
         `UPDATE routines
-            SET name = @name, skill_id = @skill_id, cron = @cron, timezone = @timezone,
-                args = @args, agent = @agent, model = @model, effort = @effort,
-                enabled = @enabled, missed_run_policy = @missed_run_policy,
-                max_retries = @max_retries, retry_delay_ms = @retry_delay_ms,
-                next_run_at = @next_run_at, updated_at = @updated_at
+            SET name = @name, target_kind = @target_kind, skill_id = @skill_id,
+                tool_name = @tool_name, tool_args = @tool_args, cron = @cron,
+                timezone = @timezone, args = @args, agent = @agent, model = @model,
+                effort = @effort, enabled = @enabled,
+                missed_run_policy = @missed_run_policy, max_retries = @max_retries,
+                retry_delay_ms = @retry_delay_ms, next_run_at = @next_run_at,
+                updated_at = @updated_at
           WHERE id = @id`
       )
       .run({
         id,
         name: merged.name.trim(),
-        skill_id: merged.skillId.trim(),
+        ...this.targetColumns(target),
         cron: merged.cron.trim(),
         timezone,
-        args: merged.args ?? null,
-        agent: merged.agent ?? null,
-        model: merged.model ?? null,
-        effort: merged.effort ?? null,
         enabled: enabled ? 1 : 0,
         missed_run_policy: merged.missedRunPolicy ?? 'skip',
         max_retries: merged.maxRetries ?? 0,
@@ -316,6 +392,64 @@ export class RoutineStore {
           WHERE id = @id`
       )
       .run({ id, at: at.toISOString(), run_id: runId })
+  }
+
+  /**
+   * Record the latest value a routine produced.
+   *
+   * One row per routine, upserted - this is the widget's data source, and it
+   * must not live in `tool_calls`, which is an audit trail with a retention
+   * policy that would delete the widget's data out from under it.
+   */
+  saveResult(
+    routineId: string,
+    status: RunStatus,
+    result: string | null,
+    error: string | null,
+    at = new Date()
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO routine_results (routine_id, status, result, error, updated_at)
+         VALUES (@id, @status, @result, @error, @at)
+         ON CONFLICT(routine_id) DO UPDATE SET
+           status = excluded.status, result = excluded.result,
+           error = excluded.error, updated_at = excluded.updated_at`
+      )
+      .run({ id: routineId, status, result, error, at: at.toISOString() })
+  }
+
+  result(routineId: string): RoutineResult | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM routine_results WHERE routine_id = ?')
+      .get(routineId) as
+      | { routine_id: string; status: string; result: string | null; error: string | null; updated_at: string }
+      | undefined
+    if (!row) return undefined
+    return {
+      routineId: row.routine_id,
+      status: row.status as RoutineLastStatus,
+      result: row.result,
+      error: row.error,
+      updatedAt: row.updated_at
+    }
+  }
+
+  results(): RoutineResult[] {
+    const rows = this.db.prepare('SELECT * FROM routine_results').all() as Array<{
+      routine_id: string
+      status: string
+      result: string | null
+      error: string | null
+      updated_at: string
+    }>
+    return rows.map((row) => ({
+      routineId: row.routine_id,
+      status: row.status as RoutineLastStatus,
+      result: row.result,
+      error: row.error,
+      updatedAt: row.updated_at
+    }))
   }
 
   markStatus(id: string, status: RoutineLastStatus, at: Date, runId?: string | null): void {

@@ -23,7 +23,11 @@ export function GatewayPanel(): React.JSX.Element {
   const [pending, setPending] = useState<PendingConfirmation[]>([])
   const [calls, setCalls] = useState<ToolCallRecord[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Which credential row has its input open, and what has been typed. */
+  const [editing, setEditing] = useState<string | null>(null)
+  const [secret, setSecret] = useState('')
 
   const load = useCallback(() => {
     void window.arms.gateway.status().then(setStatus)
@@ -46,6 +50,68 @@ export function GatewayPanel(): React.JSX.Element {
     try {
       if (approve) await window.arms.confirmations.approve(item.confirmationId)
       else await window.arms.confirmations.reject(item.confirmationId, 'rejected from the dashboard')
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  async function prune(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await window.arms.gateway.prune()
+      // Deleting rows does not shrink the file, so say so rather than let the
+      // size on disk look like the pruning did nothing.
+      setNotice(
+        r.total === 0
+          ? '没有过期记录'
+          : `清理 ${r.total} 条（${r.aged} 条超期、${r.noise} 条只读噪声）。` +
+            '磁盘空间要点「回收空间」才会还给文件系统。'
+      )
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function compact(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      const { before, after } = await window.arms.gateway.compact()
+      const mb = (n: number): string => `${(n / 1024 / 1024).toFixed(1)} MB`
+      setNotice(`${mb(before)} → ${mb(after)}，回收 ${mb(Math.max(0, before - after))}`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveSecret(id: string): Promise<void> {
+    setError(null)
+    try {
+      await window.arms.vault.set(id, secret)
+      // Drop it from renderer memory the moment it is stored.
+      setSecret('')
+      setEditing(null)
+      setNotice(`已保存 ${id}`)
+      await window.arms.gateway.reload()
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  async function removeSecret(id: string): Promise<void> {
+    setError(null)
+    try {
+      await window.arms.vault.remove(id)
+      setNotice(`已删除 ${id}`)
+      await window.arms.gateway.reload()
       load()
     } catch (err) {
       setError((err as Error).message)
@@ -105,7 +171,82 @@ export function GatewayPanel(): React.JSX.Element {
         )}
       </div>
 
+      {status && status.credentials.length > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ margin: '0 0 8px' }}>凭据</h3>
+          <p className="status-line" style={{ marginBottom: 10 }}>
+            由 OS keychain（safeStorage）加密保管。存进去之后再也读不出来——这里只显示有没有。
+          </p>
+          {status.credentials.map((cred) => (
+            <div className="row" key={cred.id} style={{ marginBottom: 8 }}>
+              <span className="mono">{cred.id}</span>
+              <span className={cred.present ? 'tag' : 'tag risk'}>
+                {cred.present ? '已设置' : '未设置'}
+              </span>
+              <span className="status-line">{cred.connectorIds.join('、')}</span>
+              <span className="spacer" />
+              {editing === cred.id ? (
+                <>
+                  <input
+                    type="password"
+                    autoFocus
+                    value={secret}
+                    placeholder="粘贴应用专用密码"
+                    onChange={(e) => setSecret(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && secret) void saveSecret(cred.id)
+                      if (e.key === 'Escape') {
+                        setSecret('')
+                        setEditing(null)
+                      }
+                    }}
+                    style={{ minWidth: 220 }}
+                  />
+                  <button
+                    className="primary"
+                    disabled={!secret}
+                    onClick={() => void saveSecret(cred.id)}
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSecret('')
+                      setEditing(null)
+                    }}
+                  >
+                    取消
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setSecret('')
+                      setEditing(cred.id)
+                    }}
+                  >
+                    {cred.present ? '替换' : '设置'}
+                  </button>
+                  {cred.present && (
+                    <button className="danger" onClick={() => void removeSecret(cred.id)}>
+                      删除
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+          {!status.vault.available && (
+            <p className="error">
+              当前 vault（{status.vault.kind}）不可写——凭据只能在 ARMS 桌面应用里设置，CLI 不行。
+            </p>
+          )}
+        </div>
+      )}
+
       {error && <p className="error">{error}</p>}
+      {notice && <p className="status-line">{notice}</p>}
 
       <h3 style={{ margin: '16px 0 8px' }}>
         Awaiting your approval {pending.length > 0 && `(${pending.length})`}
@@ -141,7 +282,22 @@ export function GatewayPanel(): React.JSX.Element {
         </div>
       )}
 
-      <h3 style={{ margin: '20px 0 8px' }}>Recent tool calls</h3>
+      <div className="row" style={{ margin: '20px 0 8px' }}>
+        <h3 style={{ margin: 0 }}>Recent tool calls</h3>
+        {status && (
+          <span className="status-line">
+            {status.toolCallCount} 条 · 写操作与被拦下的保留 {status.retention.keepDays} 天，
+            成功的只读调用保留 {status.retention.keepReadOnlyDays} 天
+          </span>
+        )}
+        <span className="spacer" />
+        <button onClick={() => void prune()} disabled={busy}>
+          清理过期
+        </button>
+        <button onClick={() => void compact()} disabled={busy} title="VACUUM，会重写整个数据库文件">
+          回收空间
+        </button>
+      </div>
       {calls.length === 0 ? (
         <p className="empty">No connector has been called yet.</p>
       ) : (

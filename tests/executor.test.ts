@@ -41,6 +41,15 @@ function fakeSpawner(): {
   }
 }
 
+const SKILL_TARGET = {
+  kind: 'skill' as const,
+  skillId: 'news-digest',
+  args: null,
+  agent: null,
+  model: null,
+  effort: null
+}
+
 const DEFAULT_DOC = skillDoc({
   name: 'news-digest',
   modelHint: 'claude-sonnet-5',
@@ -245,7 +254,11 @@ describe('routine wiring', () => {
     await setup()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest', args: 'daily', attempt: 1 })
+    bus.emit('routine:fired', {
+      routineId: 'r1',
+      target: { kind: 'skill', skillId: 'news-digest', args: 'daily', agent: null, model: null, effort: null },
+      attempt: 1
+    })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls[0]?.args[1]).toBe('/news-digest daily')
@@ -257,17 +270,39 @@ describe('routine wiring', () => {
     executor.start()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'news-digest', attempt: 1 })
+    bus.emit('routine:fired', {
+      routineId: 'r1',
+      target: SKILL_TARGET,
+      attempt: 1
+    })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls).toHaveLength(1)
+  })
+
+  it('ignores a tool target, which belongs to ToolRoutineRunner', async () => {
+    await setup()
+    executor.start()
+
+    bus.emit('routine:fired', {
+      routineId: 'r1',
+      target: { kind: 'tool', toolName: 'demo.echo', toolArgs: {} },
+      attempt: 1
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(fake.calls).toHaveLength(0)
   })
 
   it('swallows a routine pointing at a skill that no longer exists', async () => {
     await setup()
     executor.start()
 
-    bus.emit('routine:fired', { routineId: 'r1', skillId: 'deleted-skill', attempt: 1 })
+    bus.emit('routine:fired', {
+      routineId: 'r1',
+      target: { kind: 'skill', skillId: 'deleted-skill', args: null, agent: null, model: null, effort: null },
+      attempt: 1
+    })
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(fake.calls).toHaveLength(0)

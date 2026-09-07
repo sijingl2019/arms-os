@@ -6,13 +6,9 @@ function routine(overrides: Partial<RoutineDef> = {}): RoutineDef {
   return {
     id: 'abc123',
     name: 'morning digest',
-    skillId: 'news-digest',
+    target: { kind: 'skill', skillId: 'news-digest', args: null, agent: null, model: null, effort: null },
     cron: '0 9 * * *',
     timezone: null,
-    args: null,
-    agent: null,
-    model: null,
-    effort: null,
     enabled: true,
     missedRunPolicy: 'skip',
     maxRetries: 0,
@@ -51,7 +47,16 @@ describe('planSystemTask on Windows', () => {
 
   it('passes routine args and model through', () => {
     const plan = planSystemTask({
-      routine: routine({ args: 'only-cn', model: 'claude-sonnet-5' }),
+      routine: routine({
+        target: {
+          kind: 'skill',
+          skillId: 'news-digest',
+          args: 'only-cn',
+          model: 'claude-sonnet-5',
+          agent: null,
+          effort: null
+        }
+      }),
       workspaceRoot: WS,
       platform: 'win32'
     })

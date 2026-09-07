@@ -47,11 +47,25 @@ function shellQuote(value: string): string {
 function innerCommand(o: Required<Pick<SystemTaskOptions, 'cliCommand' | 'workspaceRoot'>> & {
   routine: RoutineDef
 }): string {
-  const parts = [o.cliCommand, 'run', o.routine.skillId, '--workspace', o.workspaceRoot]
-  if (o.routine.args) parts.push('--args', o.routine.args)
-  if (o.routine.agent) parts.push('--agent', o.routine.agent)
-  if (o.routine.model) parts.push('--model', o.routine.model)
-  if (o.routine.effort) parts.push('--effort', o.routine.effort)
+  const target = o.routine.target
+  if (target.kind === 'tool') {
+    return [
+      o.cliCommand,
+      'gateway',
+      'call',
+      target.toolName,
+      '--workspace',
+      o.workspaceRoot,
+      '--args',
+      JSON.stringify(target.toolArgs)
+    ].join(' ')
+  }
+
+  const parts = [o.cliCommand, 'run', target.skillId, '--workspace', o.workspaceRoot]
+  if (target.args) parts.push('--args', target.args)
+  if (target.agent) parts.push('--agent', target.agent)
+  if (target.model) parts.push('--model', target.model)
+  if (target.effort) parts.push('--effort', target.effort)
   return parts.join(' ')
 }
 

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useWallpaper } from './wallpaper/WallpaperProvider'
+import { ChatDock } from './desktop/ChatDock'
 import { Desktop } from './desktop/Desktop'
 import { Dock } from './desktop/Dock'
 import { OverlayHost } from './desktop/OverlayHost'
@@ -17,7 +19,9 @@ import type { PanelId, Route } from './routes'
  * owned here rather than by either of the two views.
  */
 export function App(): React.JSX.Element {
+  const wallpaper = useWallpaper()
   const [route, setRoute] = useState<Route>(null)
+  const [chatOpen, setChatOpen] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState(0)
 
   const refreshApprovals = useCallback(() => {
@@ -36,13 +40,16 @@ export function App(): React.JSX.Element {
   }, [refreshApprovals])
 
   useEffect(() => {
-    if (route === null) return
+    if (route === null && !chatOpen) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setRoute(null)
+      if (e.key !== 'Escape') return
+      // The chat window sits on top, so it is what Esc closes first.
+      if (chatOpen) setChatOpen(false)
+      else setRoute(null)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [route])
+  }, [route, chatOpen])
 
   // A waiting approval blocks an agent, so jump straight to it - the same
   // reasoning that makes the main process un-hide the window.
@@ -52,11 +59,14 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app">
+      <div className="desktop-wallpaper" style={wallpaper.style} aria-hidden="true" />
       {/* No native title bar, so this strip is what the window is dragged by. */}
-      <div className="drag-strip" />
+      <div className="drag-strip">
+        <span className="shell-brand">ARMS <span>Agentic OS</span></span>
+      </div>
       <WindowControls />
 
-      <Desktop hidden={route !== null} onOpen={open} />
+      <Desktop hidden={route !== null} chatOpen={chatOpen} onOpen={open} />
 
       {route !== null && (
         <OverlayHost panel={route} onClose={() => setRoute(null)}>
@@ -69,7 +79,23 @@ export function App(): React.JSX.Element {
         </OverlayHost>
       )}
 
-      <Dock route={route} onNavigate={setRoute} pendingApprovals={pendingApprovals} />
+      {chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
+
+      <Dock
+        route={route}
+        onNavigate={(next) => {
+          setRoute(next)
+          // A panel covers the desktop the chat window floats over, so opening
+          // one puts the conversation away rather than leaving it stranded.
+          if (next !== null) setChatOpen(false)
+        }}
+        chatOpen={chatOpen}
+        onToggleChat={() => {
+          setChatOpen((open) => !open)
+          setRoute(null)
+        }}
+        pendingApprovals={pendingApprovals}
+      />
     </div>
   )
 }

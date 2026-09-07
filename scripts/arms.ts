@@ -43,20 +43,28 @@ const USAGE = `arms - ARMS Agentic OS skill tooling
 
   arms gateway status                   connectors, tools and their risk tiers
   arms gateway serve                    run the MCP endpoint until Ctrl+C
+  arms gateway call <tool> [--args JSON] invoke one tool through the full chain
   arms gateway calls [--limit N]        recent tool calls from the audit table
+  arms gateway prune [--dry-run]        apply the audit retention policy
+  arms gateway compact                  VACUUM: reclaim space pruned rows freed
   arms gateway pending                  approvals waiting on a human
   arms gateway approve <id>
   arms gateway reject <id> [--reason R]
 
   arms routines list                    list routines with their next run time
-  arms routines add --name N --skill S --cron "0 9 * * *" [routine options]
+  arms routines add --name N (--skill S | --tool connector.tool) --cron "0 9 * * *"
+  arms routines result <id>             latest value a routine produced
   arms routines set <id> [routine options]
   arms routines rm <id>
   arms routines tick [--at <iso>]       run one scheduler pass by hand
   arms routines export <id>             print an OS-level scheduled task command
 
 routine options:
-  --name, --skill, --cron, --tz, --args, --agent, --model, --effort
+  --name, --cron, --tz, --missed, --retries, --retry-delay, --enabled
+  --skill S                             target a Skill; --args is prose
+  --tool connector.tool                 target a Gateway tool; --args is JSON
+                                        (a write-irreversible tool is refused)
+  --agent, --model, --effort            skill targets only
   --enabled true|false
   --missed skip|catch-up-once           what to do about a trigger missed offline
   --retries N  --retry-delay <ms>
@@ -362,6 +370,7 @@ function routineOptions(flags: Flags): Partial<RoutineInput> {
   const patch: Partial<RoutineInput> = {}
   const name = str(flags, 'name')
   const skillId = str(flags, 'skill')
+  const toolName = str(flags, 'tool')
   const cron = str(flags, 'cron')
   const tz = str(flags, 'tz')
   const args = str(flags, 'args')
@@ -374,30 +383,65 @@ function routineOptions(flags: Flags): Partial<RoutineInput> {
   const retryDelay = num('retry-delay')
 
   if (name !== undefined) patch.name = name
-  if (skillId !== undefined) patch.skillId = skillId
   if (cron !== undefined) patch.cron = cron
   if (tz !== undefined) patch.timezone = tz
-  if (args !== undefined) patch.args = args
-  if (agent !== undefined) patch.agent = agent as AgentId
-  if (model !== undefined) patch.model = model
-  if (effort !== undefined) patch.effort = effort
   if (missed !== undefined) patch.missedRunPolicy = missed as MissedRunPolicy
   if (enabled !== undefined) patch.enabled = enabled
   if (retries !== undefined) patch.maxRetries = retries
   if (retryDelay !== undefined) patch.retryDelayMs = retryDelay
+
+  // A target is replaced whole, never merged field by field - half a skill
+  // target grafted onto a tool target is a bug factory.
+  if (toolName !== undefined) {
+    patch.target = { kind: 'tool', toolName, toolArgs: parseJsonArgs(args) }
+  } else if (skillId !== undefined) {
+    patch.target = {
+      kind: 'skill',
+      skillId,
+      ...(args === undefined ? {} : { args }),
+      ...(agent === undefined ? {} : { agent: agent as AgentId }),
+      ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort })
+    }
+  }
+
   return patch
+}
+
+/** `--args` is prose for a skill target and JSON for a tool target. */
+function parseJsonArgs(raw: string | undefined): Record<string, unknown> {
+  if (!raw?.trim()) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    throw new Error(`--args must be a JSON object for a tool target, got: ${raw}`)
+  }
+}
+
+function describeTarget(r: RoutineDef): string {
+  return r.target.kind === 'tool' ? `tool:${r.target.toolName}` : r.target.skillId
 }
 
 function printRoutine(r: RoutineDef): void {
   const state = r.enabled ? 'on ' : 'off'
   console.log(
-    `${state} ${r.id.slice(0, 8)}  ${r.name.padEnd(24)} ${r.skillId.padEnd(20)} ` +
+    `${state} ${r.id.slice(0, 8)}  ${r.name.padEnd(24)} ${describeTarget(r).padEnd(26)} ` +
       `${r.cron.padEnd(14)} next=${r.nextRunAt ?? '-'} last=${r.lastStatus ?? '-'}`
   )
 }
 
 async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
   const [, sub = 'list', ...rest] = flags.positional
+
+  // Anything that has to reason about a tool target needs the connector
+  // manifest loaded. The Electron app starts the Gateway at boot, but a
+  // one-shot CLI process starts with an empty registry, so every tool would
+  // otherwise look unknown.
+  const needsTools = sub === 'tick' || (str(flags, 'tool') !== undefined && (sub === 'add' || sub === 'set'))
+  if (needsTools) await core.gateway.reload()
 
   /** Accept an id prefix, the way git accepts a short sha. */
   const resolve = (prefix: string): RoutineDef | undefined => {
@@ -417,14 +461,13 @@ async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
 
   if (sub === 'add') {
     const patch = routineOptions(flags)
-    if (!patch.name || !patch.skillId || !patch.cron) {
-      console.error('usage: arms routines add --name N --skill S --cron "0 9 * * *"')
+    if (!patch.name || !patch.target || !patch.cron) {
+      console.error(
+        'usage: arms routines add --name N (--skill S | --tool connector.tool) --cron "0 9 * * *"'
+      )
       return 2
     }
-    if (!core.registry.get(patch.skillId)) {
-      console.error(`unknown skill: ${patch.skillId} (run \`arms skills refresh\` first)`)
-      return 1
-    }
+    // The store re-validates the target; this only shapes the error message.
     const created = core.routines.create(patch as RoutineInput)
     printRoutine(created)
     return 0
@@ -473,6 +516,24 @@ async function routinesCommand(core: ArmsCore, flags: Flags): Promise<number> {
       console.log(`  fired   ${id.slice(0, 8)} ${r?.name ?? ''}  next=${r?.nextRunAt ?? '-'}`)
     }
     for (const s of result.skipped) console.log(`  skipped ${s.routineId.slice(0, 8)}: ${s.reason}`)
+    return 0
+  }
+
+  if (sub === 'result') {
+    const prefix = rest[0]
+    const found = prefix ? resolve(prefix) : undefined
+    if (!found) {
+      console.error('usage: arms routines result <id>')
+      return 2
+    }
+    const value = core.routines.result(found.id)
+    if (!value) {
+      console.log('(this routine has not produced a value yet)')
+      return 0
+    }
+    console.log(`${value.status}  updated ${value.updatedAt}`)
+    if (value.error) console.error(value.error)
+    if (value.result) console.log(value.result)
     return 0
   }
 
@@ -586,14 +647,29 @@ async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
   const [, sub = 'status', ...rest] = flags.positional
 
   if (sub === 'status' || sub === 'serve') {
-    const started = await core.startGateway()
+    // `status` only reads the manifest; binding the port is `serve`'s job.
+    // Otherwise you could not inspect the Gateway while the app was running,
+    // which is exactly when you would want to.
+    const started = sub === 'serve' ? await core.startGateway() : null
+    if (!started) await core.gateway.reload()
     const status = core.gatewayStatus()
 
-    console.log(`endpoint   ${started.endpoint}`)
+    console.log(`endpoint   ${started?.endpoint ?? `(not listening; \`arms gateway serve\` binds it)`}`)
     console.log(`manifest   ${status.manifestPath}`)
     console.log(`vault      ${status.vault.kind} (available=${status.vault.available})`)
-    if (started.expired > 0) {
+    if (started && started.expired > 0) {
       console.log(`expired    ${started.expired} approval(s) left pending by a previous session`)
+    }
+    if (started && started.pruned.total > 0) {
+      console.log(`pruned     ${started.pruned.total} audit row(s) past their retention`)
+    }
+    if (status.credentials.length > 0) {
+      console.log('credentials')
+      for (const cred of status.credentials) {
+        console.log(
+          `  ${cred.id.padEnd(24)} ${cred.present ? 'set' : 'MISSING'}  (${cred.connectorIds.join(', ')})`
+        )
+      }
     }
     for (const issue of status.issues) console.warn(`warn: ${issue}`)
 
@@ -609,8 +685,8 @@ async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
     if (sub !== 'serve') return 0
 
     console.log('\nattach an agent with:')
-    console.log(`  claude mcp add --transport http arms-gateway ${started.endpoint}`)
-    console.log(`  codex  mcp add arms-gateway --url ${started.endpoint}`)
+    console.log(`  claude mcp add --transport http arms-gateway ${started?.endpoint ?? ''}`)
+    console.log(`  codex  mcp add arms-gateway --url ${started?.endpoint ?? ''}`)
     console.log('\nlistening - Ctrl+C to stop')
     // Approvals need a human, and there is no dashboard here, so say so loudly.
     core.bus.on('gateway:confirmation:pending', (item) => {
@@ -620,6 +696,18 @@ async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
     })
     await new Promise<void>((resolve) => process.once('SIGINT', () => resolve()))
     return 0
+  }
+
+  if (sub === 'call') {
+    const toolName = rest[0]
+    if (!toolName) {
+      console.error('usage: arms gateway call <connector.tool> [--args JSON]')
+      return 2
+    }
+    await core.gateway.reload()
+    const result = await core.dispatchTool(toolName, parseJsonArgs(str(flags, 'args')))
+    for (const block of result.content) console.log(block.text)
+    return result.isError ? 1 : 0
   }
 
   if (sub === 'calls') {
@@ -637,6 +725,51 @@ async function gatewayCommand(core: ArmsCore, flags: Flags): Promise<number> {
           `${String(r['qualified_name']).padEnd(30)} [${String(r['risk'])}] ${r['error'] ?? ''}`
       )
     }
+    return 0
+  }
+
+  if (sub === 'prune') {
+    const before = (
+      core.db.prepare('SELECT count(*) AS n FROM tool_calls').get() as { n: number }
+    ).n
+
+    if (flags.options['dry-run'] === true) {
+      // Count what the policy would take without taking it.
+      const keep = core.config.toolCallKeepDays
+      const readOnly = Math.min(core.config.toolCallKeepReadOnlyDays, keep)
+      const at = (days: number): string =>
+        new Date(Date.now() - days * 86_400_000).toISOString()
+      const row = core.db
+        .prepare(
+          `SELECT
+             sum(CASE WHEN started_at < @keep THEN 1 ELSE 0 END) AS aged,
+             sum(CASE WHEN started_at >= @keep AND started_at < @ro
+                       AND outcome = 'succeeded' AND risk = 'read-only'
+                      THEN 1 ELSE 0 END) AS noise
+             FROM tool_calls`
+        )
+        .get({ keep: at(keep), ro: at(readOnly) }) as { aged: number | null; noise: number | null }
+
+      console.log(`rows        ${before}`)
+      console.log(`would drop  ${row.aged ?? 0} aged past ${keep}d, ${row.noise ?? 0} read-only past ${readOnly}d`)
+      return 0
+    }
+
+    const result = core.gateway.prune()
+    console.log(
+      `pruned ${result.total} row(s): ${result.aged} aged past ` +
+        `${core.config.toolCallKeepDays}d, ${result.noise} successful read-only past ` +
+        `${core.config.toolCallKeepReadOnlyDays}d`
+    )
+    console.log(`remaining ${before - result.total}`)
+    console.log('run `arms gateway compact` to give the freed space back to the filesystem')
+    return 0
+  }
+
+  if (sub === 'compact') {
+    const { before, after } = core.gateway.compact()
+    const mb = (n: number): string => `${(n / 1024 / 1024).toFixed(1)} MB`
+    console.log(`${mb(before)} -> ${mb(after)} (reclaimed ${mb(Math.max(0, before - after))})`)
     return 0
   }
 

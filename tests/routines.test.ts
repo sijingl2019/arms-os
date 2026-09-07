@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ArmsBus } from '@main/bus'
 import { RoutineScheduler } from '@main/routines/scheduler'
 import { RoutineStore, RoutineValidationError, validateRoutine } from '@main/routines/store'
-import type { ArmsEvents, RoutineInput } from '@shared/types'
+import type { ArmsEvents, RoutineInput, RoutineTargetInput } from '@shared/types'
 import { createHarness, type Harness } from './helpers'
 
 const AT = (iso: string): Date => new Date(iso)
@@ -13,11 +13,14 @@ let h: Harness
 let store: RoutineStore
 let bus: ArmsBus
 
+/** A skill target, unless the test overrides it. */
+const SKILL_TARGET: RoutineTargetInput = { kind: 'skill', skillId: 'news-digest' }
+
 function make(overrides: Partial<RoutineInput> = {}, now = AT('2026-09-04T08:00:00Z')) {
   return store.create(
     {
       name: 'morning digest',
-      skillId: 'news-digest',
+      target: SKILL_TARGET,
       cron: DAILY_9,
       timezone: 'UTC',
       ...overrides
@@ -38,7 +41,11 @@ afterEach(() => {
 })
 
 describe('validateRoutine', () => {
-  const base: RoutineInput = { name: 'r', skillId: 's', cron: DAILY_9 }
+  const base: RoutineInput = {
+    name: 'r',
+    target: { kind: 'skill', skillId: 's' },
+    cron: DAILY_9
+  }
 
   it('accepts a well-formed routine', () => {
     expect(validateRoutine(base)).toEqual([])
@@ -46,7 +53,7 @@ describe('validateRoutine', () => {
 
   it.each([
     ['name', { ...base, name: '  ' }],
-    ['skillId', { ...base, skillId: '' }],
+    ['target', { ...base, target: { kind: 'skill', skillId: '' } }],
     ['cron', { ...base, cron: 'not a cron' }],
     ['maxRetries', { ...base, maxRetries: -1 }],
     ['retryDelayMs', { ...base, retryDelayMs: -5 }]
@@ -148,7 +155,8 @@ describe('RoutineScheduler', () => {
     scheduler = new RoutineScheduler({
       store,
       bus,
-      hasSkill: (id) => known.has(id)
+      checkTarget: (target) =>
+        target.kind === 'skill' && known.has(target.skillId) ? null : 'unknown-skill'
     })
   })
 
@@ -159,14 +167,17 @@ describe('RoutineScheduler', () => {
     const result = scheduler.tick(AT('2026-09-04T09:00:01Z'))
 
     expect(result.fired).toEqual([routine.id])
-    expect(fired[0]).toMatchObject({ routineId: routine.id, skillId: 'news-digest', attempt: 1 })
+    expect(fired[0]).toMatchObject({ routineId: routine.id, attempt: 1 })
+    expect(fired[0]?.target).toMatchObject({ kind: 'skill', skillId: 'news-digest' })
     expect(store.get(routine.id)?.nextRunAt).toBe('2026-09-05T09:00:00.000Z')
   })
 
   it('passes the routine args along', () => {
-    make({ args: '只看中文源' })
+    make({ target: { kind: 'skill', skillId: 'news-digest', args: '只看中文源' } })
     scheduler.tick(AT('2026-09-04T09:00:01Z'))
-    expect(fired[0]?.args).toBe('只看中文源')
+    expect(fired[0]?.target).toEqual(
+      expect.objectContaining({ kind: 'skill', args: '只看中文源' })
+    )
   })
 
   it('does nothing before the routine is due', () => {
@@ -176,7 +187,7 @@ describe('RoutineScheduler', () => {
   })
 
   it('skips a routine whose skill is no longer indexed', () => {
-    const routine = make({ skillId: 'deleted-skill' })
+    const routine = make({ target: { kind: 'skill', skillId: 'deleted-skill' } })
     const result = scheduler.tick(AT('2026-09-04T09:00:01Z'))
 
     expect(result.skipped).toEqual([{ routineId: routine.id, reason: 'unknown-skill' }])
@@ -256,7 +267,7 @@ describe('RoutineScheduler startup reconciliation', () => {
   let scheduler: RoutineScheduler
 
   function build(): RoutineScheduler {
-    return new RoutineScheduler({ store, bus, hasSkill: () => true })
+    return new RoutineScheduler({ store, bus, checkTarget: () => null })
   }
 
   beforeEach(() => {
@@ -341,7 +352,7 @@ describe('RoutineScheduler retries', () => {
     scheduler = new RoutineScheduler({
       store,
       bus,
-      hasSkill: () => true,
+      checkTarget: () => null,
       clock: () => clockNow
     })
   })

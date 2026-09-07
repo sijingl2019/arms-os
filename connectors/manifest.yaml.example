@@ -39,3 +39,21 @@
         type: object
         properties:
           q: { type: string }
+
+# IMAP mailbox. An MCP stdio server rather than a CLI, because the passthrough
+# adapter keeps the connection open while a CLI would reconnect on every call.
+#
+# Host and user are plain configuration; only the app password is a secret, so
+# only it comes from the vault. Set it in the Gateway panel - the CLI cannot,
+# because safeStorage only exists inside Electron.
+- id: email
+  transport: mcp-stdio
+  command: ['node', 'connectors/email-imap/server.js']
+  credential_ref: vault://email-imap
+  env:
+    IMAP_HOST: imap.gmail.com
+    IMAP_PORT: '993'
+    IMAP_USER: you@example.com
+  default_risk: read-only
+  overrides:
+    mark_read: write-reversible

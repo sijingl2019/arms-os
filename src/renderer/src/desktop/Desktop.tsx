@@ -1,31 +1,42 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useShell } from '../i18n/useI18n'
 import type { PanelId } from '../routes'
 import { BrainCanvas } from './brain/BrainCanvas'
+import { Icon } from './icons'
 import { SearchOverlay } from './SearchOverlay'
 import { AppsWidget } from './widgets/AppsWidget'
 import { GitWidget } from './widgets/GitWidget'
-import { CalendarWidget, EmailWidget } from './widgets/PlaceholderWidgets'
+import { EmailWidget } from './widgets/EmailWidget'
+import { CalendarWidget } from './widgets/PlaceholderWidgets'
 import { RoutinesWidget } from './widgets/RoutinesWidget'
 import { SkillsWidget } from './widgets/SkillsWidget'
 
 export interface DesktopProps {
-  /** True while a panel covers the desktop; the brain stops animating. */
+  /** True while a panel covers the desktop; the core stops animating. */
   hidden: boolean
+  /** The chat window floats over the same space the search box uses. */
+  chatOpen: boolean
   onOpen: (panel: PanelId) => void
 }
 
 /**
- * The home screen: three widgets down each side, the brain in the middle, and
- * the Dock (owned by App) along the bottom.
+ * The home screen: three widgets down each side, the particle core in the
+ * middle, and the Dock (owned by App) along the bottom.
  */
-export function Desktop({ hidden, onOpen }: DesktopProps): React.JSX.Element {
+export function Desktop({ hidden, chatOpen, onOpen }: DesktopProps): React.JSX.Element {
+  const { t } = useShell()
   const [searching, setSearching] = useState(false)
+
+  // Two floating panels over one stage is a mess; the newer one wins.
+  useEffect(() => {
+    if (chatOpen) setSearching(false)
+  }, [chatOpen])
 
   return (
     <div className="desktop">
       <aside className="widget-column left">
         <AppsWidget onOpen={onOpen} />
-        <CalendarWidget />
+        <CalendarWidget onOpen={onOpen} />
         <GitWidget />
       </aside>
 
@@ -34,11 +45,11 @@ export function Desktop({ hidden, onOpen }: DesktopProps): React.JSX.Element {
         {!searching && (
           <button
             type="button"
-            className="brain-hit"
-            aria-label="搜索知识库"
+            className="core-hit"
+            aria-label={t('search.label')}
             onClick={() => setSearching(true)}
           >
-            <span className="brain-hint">点击搜索知识库</span>
+            <span className="core-hint"><Icon name="search" size={14} />{t('search.label')}</span>
           </button>
         )}
         {searching && (
@@ -53,7 +64,7 @@ export function Desktop({ hidden, onOpen }: DesktopProps): React.JSX.Element {
       </div>
 
       <aside className="widget-column right">
-        <EmailWidget />
+        <EmailWidget onOpen={onOpen} />
         <SkillsWidget onOpen={onOpen} />
         <RoutinesWidget onOpen={onOpen} />
       </aside>

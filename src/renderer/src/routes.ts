@@ -1,3 +1,4 @@
+import type { AppIconName } from './desktop/AppIcon'
 import type { IconName } from './desktop/icons'
 
 /**
@@ -15,15 +16,17 @@ export type Route = PanelId | null
 export interface PanelMeta {
   id: PanelId
   icon: IconName
+  /** The colourful tile the Dock shows; `icon` stays for monochrome contexts. */
+  tile: AppIconName
   /** Shown in the Dock tooltip and as the overlay's heading. */
   label: string
 }
 
 export const PANELS: readonly PanelMeta[] = [
-  { id: 'Skills', icon: 'skills', label: 'Skills' },
-  { id: 'Routines', icon: 'routines', label: 'Routines' },
-  { id: 'Runs', icon: 'runs', label: 'Runs' },
-  { id: 'Memory', icon: 'memory', label: 'Memory' },
-  { id: 'Gateway', icon: 'gateway', label: 'Gateway' },
-  { id: 'Settings', icon: 'settings', label: '设置' }
+  { id: 'Skills', icon: 'skills', tile: 'skills', label: 'Skills' },
+  { id: 'Routines', icon: 'routines', tile: 'routines', label: 'Routines' },
+  { id: 'Runs', icon: 'runs', tile: 'runs', label: 'Runs' },
+  { id: 'Memory', icon: 'memory', tile: 'memory', label: 'Memory' },
+  { id: 'Gateway', icon: 'gateway', tile: 'gateway', label: 'Gateway' },
+  { id: 'Settings', icon: 'settings', tile: 'settings', label: 'Settings' }
 ]

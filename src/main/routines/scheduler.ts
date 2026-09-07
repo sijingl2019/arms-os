@@ -2,6 +2,7 @@ import type {
   RoutineDef,
   RoutineSkipReason,
   RoutineStartupReport,
+  RoutineTarget,
   RunStatus
 } from '@shared/types'
 import type { ArmsBus } from '../bus'
@@ -18,8 +19,16 @@ const DEFAULT_TICK_MS = 20_000
 export interface RoutineSchedulerDeps {
   store: RoutineStore
   bus: ArmsBus
-  /** Resolves a skill id to decide whether a routine can fire at all. */
-  hasSkill(skillId: string): boolean
+  /**
+   * Decide whether a target may fire right now. Returns a skip reason, or null
+   * to proceed.
+   *
+   * Asked at every firing, not only at creation: a tool that was safe to
+   * schedule can be promoted to write-irreversible by an edit to the connector
+   * manifest, and a routine must not go on firing into a guardrail that will
+   * block it, time out, and leave a trail of expired approvals nobody saw.
+   */
+  checkTarget(target: RoutineTarget): RoutineSkipReason | null
   tickMs?: number
   /**
    * Source of "now" for everything the scheduler does, including the retry
@@ -53,7 +62,7 @@ interface PendingRetry {
 export class RoutineScheduler {
   private readonly store: RoutineStore
   private readonly bus: ArmsBus
-  private readonly hasSkill: (skillId: string) => boolean
+  private readonly checkTarget: (target: RoutineTarget) => RoutineSkipReason | null
   private readonly tickMs: number
   private readonly clock: () => Date
 
@@ -63,10 +72,10 @@ export class RoutineScheduler {
   private readonly inFlight = new Map<string, number>()
   private retries: PendingRetry[] = []
 
-  constructor({ store, bus, hasSkill, tickMs, clock }: RoutineSchedulerDeps) {
+  constructor({ store, bus, checkTarget, tickMs, clock }: RoutineSchedulerDeps) {
     this.store = store
     this.bus = bus
-    this.hasSkill = hasSkill
+    this.checkTarget = checkTarget
     this.tickMs = tickMs ?? DEFAULT_TICK_MS
     this.clock = clock ?? (() => new Date())
   }
@@ -78,10 +87,21 @@ export class RoutineScheduler {
   start(now = this.clock()): RoutineStartupReport {
     const report = this.reconcile(now)
 
-    this.unsubscribe ??= this.bus.on('skill:run:completed', (event) => {
-      if (!event.routineId) return
-      this.onRunCompleted(event.routineId, event.runId, event.status)
-    })
+    // Two completion paths, one handler: a skill target reports through the
+    // run record, a tool target has no run record to report through.
+    this.unsubscribe ??= (() => {
+      const offRun = this.bus.on('skill:run:completed', (event) => {
+        if (!event.routineId) return
+        this.onRunCompleted(event.routineId, event.runId, event.status)
+      })
+      const offTool = this.bus.on('routine:tool:completed', (event) => {
+        this.onRunCompleted(event.routineId, null, event.status)
+      })
+      return () => {
+        offRun()
+        offTool()
+      }
+    })()
 
     if (!this.timer) {
       this.timer = setInterval(() => this.tick(), this.tickMs)
@@ -176,17 +196,19 @@ export class RoutineScheduler {
       this.skip(routine, 'previous-run-still-active', now)
       return 'previous-run-still-active'
     }
-    if (!this.hasSkill(routine.skillId)) {
-      this.skip(routine, 'unknown-skill', now)
-      return 'unknown-skill'
+    const problem = this.checkTarget(routine.target)
+    if (problem) {
+      this.skip(routine, problem, now)
+      return problem
     }
     this.fire(routine, now, 1)
     return null
   }
 
   private fire(routine: RoutineDef, now: Date, attempt: number): boolean {
-    if (!this.hasSkill(routine.skillId)) {
-      this.skip(routine, 'unknown-skill', now)
+    const problem = this.checkTarget(routine.target)
+    if (problem) {
+      this.skip(routine, problem, now)
       return false
     }
 
@@ -194,9 +216,8 @@ export class RoutineScheduler {
     this.store.markFired(routine.id, now, null)
     this.bus.emit('routine:fired', {
       routineId: routine.id,
-      skillId: routine.skillId,
-      attempt,
-      ...(routine.args === null ? {} : { args: routine.args })
+      target: routine.target,
+      attempt
     })
     return true
   }
@@ -210,7 +231,7 @@ export class RoutineScheduler {
     })
   }
 
-  private onRunCompleted(routineId: string, runId: string, status: RunStatus): void {
+  private onRunCompleted(routineId: string, runId: string | null, status: RunStatus): void {
     const attempt = this.inFlight.get(routineId) ?? 1
     this.inFlight.delete(routineId)
 

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { ArmsBus } from './bus'
 import { loadConfig, type ArmsConfig, type ConfigOverrides } from './config'
 import { openDb, type Db } from './db'
@@ -5,13 +6,17 @@ import { SkillExecutor } from './executor'
 import { ConnectorGateway } from './gateway'
 import { MemoryIndexer } from './memory/indexer'
 import { MemoryStore } from './memory/store'
+import { SETTING_KEYS, SettingsStore } from './settings'
 import type { CredentialVault } from './gateway/vault'
 import { RoutineScheduler } from './routines/scheduler'
 import { RoutineStore } from './routines/store'
+import { checkRoutineTarget, explainTargetProblem } from './routines/target'
+import { ToolRoutineRunner } from './routines/toolRunner'
 import { RunStore } from './runs/store'
 import { SkillRegistry } from './skills/registry'
 import type { Spawner } from './agents/types'
 import type { GatewayStatus, RoutineStartupReport } from '@shared/types'
+import type { ToolResult } from './gateway/types'
 
 export interface ArmsCore {
   config: ArmsConfig
@@ -23,7 +28,17 @@ export interface ArmsCore {
   scheduler: RoutineScheduler
   memory: MemoryStore
   indexer: MemoryIndexer
+  settings: SettingsStore
+  /**
+   * Replace the knowledge-base roots and persist the choice.
+   *
+   * Rows belonging to a dropped root are deleted here rather than left for the
+   * next sweep: a sweep only reconciles the roots it walks, so a removed vault's
+   * files would otherwise stay searchable forever.
+   */
+  setMemoryRoots(roots: string[]): { roots: string[]; pruned: number }
   gateway: ConnectorGateway
+  toolRunner: ToolRoutineRunner
   executor: SkillExecutor
   /** Number of runs reconciled from a previous session. */
   interrupted: number
@@ -38,8 +53,10 @@ export interface ArmsCore {
    * Bind the loopback MCP endpoint. Separate from `createCore` so a one-shot
    * CLI command can inspect the graph without opening a port.
    */
-  startGateway(): Promise<{ endpoint: string; expired: number; issues: string[] }>
+  startGateway(): Promise<Awaited<ReturnType<ConnectorGateway['start']>>>
   gatewayStatus(): GatewayStatus
+  /** Invoke one tool through the full middleware chain. */
+  dispatchTool(qualifiedName: string, args: Record<string, unknown>): Promise<ToolResult>
   close(): Promise<void>
 }
 
@@ -72,8 +89,28 @@ export function createCore({
 
   const registry = new SkillRegistry({ db, config, bus })
   const runs = new RunStore({ db, logPath: config.runLogPath })
-  const routines = new RoutineStore(db)
+  // Declared before the store so the target checker can close over the
+  // registry and gateway, which are built below.
+  const resolvers = {
+    hasSkill: (skillId: string): boolean => registry.get(skillId) !== undefined,
+    riskOfTool: (qualifiedName: string) =>
+      gateway.registry.tools().find((t) => t.qualifiedName === qualifiedName)?.risk
+  }
+
+  const routines = new RoutineStore(db, (target) => {
+    const problem = checkRoutineTarget(target, resolvers)
+    return problem ? explainTargetProblem(problem, target) : null
+  })
   const memory = new MemoryStore(db)
+  const settings = new SettingsStore(db)
+
+  // A stored choice outranks the environment: once someone has picked a folder
+  // in the UI it has to survive a restart, which an env var cannot express.
+  const storedRoots = settings.getList(SETTING_KEYS.memoryRoots)
+  if (storedRoots) config.memoryRoots = storedRoots
+  const storedRouter = settings.get(SETTING_KEYS.memoryRouterRoot)
+  config.memoryRouterRoot = storedRouter ?? config.memoryRoots[0] ?? null
+
   const indexer = new MemoryIndexer({ store: memory, config, bus })
   const executor = new SkillExecutor({
     registry,
@@ -86,9 +123,9 @@ export function createCore({
   const scheduler = new RoutineScheduler({
     store: routines,
     bus,
-    // A routine pointing at a deleted skill must not fire; the scheduler asks
-    // the registry rather than guessing.
-    hasSkill: (skillId) => registry.get(skillId) !== undefined,
+    // Re-checked at every firing, not trusted from creation: the connector
+    // manifest can change underneath a scheduled routine.
+    checkTarget: (target) => checkRoutineTarget(target, resolvers),
     ...(tickMs === undefined ? {} : { tickMs }),
     ...(clock === undefined ? {} : { clock })
   })
@@ -102,8 +139,15 @@ export function createCore({
     ...(gatewayPort === undefined ? {} : { port: gatewayPort })
   })
 
+  const toolRunner = new ToolRoutineRunner({
+    store: routines,
+    dispatcher: gateway.dispatcher,
+    bus
+  })
+
   const interrupted = executor.reconcile()
   executor.start()
+  toolRunner.start()
 
   const core: ArmsCore = {
     config,
@@ -115,7 +159,38 @@ export function createCore({
     scheduler,
     memory,
     indexer,
+    settings,
+    setMemoryRoots: (roots) => {
+      const next = [...new Set(roots.map((r) => path.resolve(r)))]
+      const dropped = config.memoryRoots.filter((r) => !next.includes(r))
+
+      let pruned = 0
+      for (const root of dropped) pruned += memory.removeRoot(root)
+
+      // The config object is shared by reference, so the indexer sees this.
+      config.memoryRoots = next
+      settings.setList(SETTING_KEYS.memoryRoots, next)
+
+      if (!storedRouter) {
+        config.memoryRouterRoot = next[0] ?? null
+      }
+
+      bus.emit('memory:index:completed', {
+        ...(indexer.status().lastResult ?? {
+          added: 0,
+          updated: 0,
+          removed: pruned,
+          unchanged: 0,
+          skipped: 0,
+          durationMs: 0,
+          warnings: [],
+          routerFiles: []
+        })
+      })
+      return { roots: next, pruned }
+    },
     gateway,
+    toolRunner,
     executor,
     interrupted,
     schedulerReport: null,
@@ -126,10 +201,14 @@ export function createCore({
     },
     startGateway: () => gateway.start(),
     gatewayStatus: () => gateway.status(),
+    dispatchTool: (qualifiedName, args) => gateway.dispatcher.call({ qualifiedName, args }),
     close: async () => {
       scheduler.stop()
+      toolRunner.stop()
       executor.stop()
-      // Let pending runs.log appends land before the process goes away.
+      // Let work that was started but not awaited finish before the database
+      // goes away: a tool call still running would otherwise lose its result.
+      await toolRunner.flush()
       await runs.flush()
       await gateway.stop()
       bus.removeAll()

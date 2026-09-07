@@ -13,7 +13,9 @@ ARMS Agentic OS —— 基于 Applications / Routines / Memory / Skills 四层�
 - 运行时/语言：Node.js + TypeScript
 - 应用形态：Electron + React，**单机部署**，Gateway 与 Dashboard 同机运行（暂不考虑多机场景）
 - 凭据加密：Electron `safeStorage`（封装 OS 原生 keychain：macOS Keychain / Windows Credential Manager / Linux libsecret），不用第三方 `keytar`
-- 智能体调用方式：headless 子进程（`claude -p ...` / `codex exec ...`），不把模型能力内嵌进本应用
+- 智能体调用方式：**不把模型能力内嵌进本应用**这一条不变，但落地方式按场景分两种——
+  - Skill 执行 / Routine 触发：headless 子进程（`claude -p ...` / `codex exec ...`）
+  - 桌面对话（Dock 第二格）：**Claude Agent SDK**（`@anthropic-ai/claude-agent-sdk`，即 Claude Code 打包成库，跑的仍是同一套 harness 和同一份本机凭据），SDK 不可用或未认证时自动回落到上面的 CLI 子进程。换用 SDK 的理由是 CLI 每条消息都要把整段历史当 argv 重发、拿不到结构化事件；SDK 有真实会话续接。对话侧只开放只读工具（Read/Glob/Grep），写操作仍然必须走 Connector Gateway。Codex 侧同理走 `@openai/codex-sdk`（`Thread` 即会话，sandbox `read-only` + approval `never`），按 `defaultAgent` 选用哪一个 SDK。
 - Agent ↔ Gateway：标准 **MCP over HTTP**，只监听 `127.0.0.1`（已查证 Claude Code 和 Codex CLI 都支持 MCP-over-HTTP 客户端接入，不需要分别做协议适配器——这是对早期"Codex 可能需要单独协议适配"判断的修正）
 - Dashboard(renderer) ↔ 主进程各模块：Electron **IPC**（`contextBridge` 暴露），不走 HTTP；HTTP 只留给外部 Agent 子进程用
 - 存储原则：人要编辑、要进版本管理的东西放文件系统（Skill、connector manifest、路由文件）；系统内部状态放 SQLite（运行记录、索引缓存、审批队列）
@@ -35,7 +37,7 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 
 ## 代码现状
 
-本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail 中间件链 + 阻塞式审批队列）、**Memory Indexer**（增量索引 + FTS5 trigram 检索 + 路由文件生成）、**托盘常驻的 Electron + React 桌面外壳**（无边框窗口 + 桌面首页：左右六个控件、中央 Canvas 2D 粒子大脑与知识库搜索、底部 Dock；六个面板 Skills / Routines / Runs / Memory / Gateway / System 以全屏覆盖层打开）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
+本仓库现在是代码主仓（不再只有文档）。已落地：**Skill Registry & Executor**、**Routine Scheduler**、**Connector Gateway**（MCP over HTTP + Guardrail 中间件链 + 阻塞式审批队列）、**Memory Indexer**（增量索引 + FTS5 trigram 检索 + 路由文件生成）、**托盘常驻的 Electron + React 桌面外壳**（无边框窗口 + 桌面首页：左右六个控件、中央 Canvas 2D 粒子大脑与知识库搜索、底部 Dock；六个面板 Skills / Routines / Runs / Memory / Gateway / 设置 以全屏覆盖层打开；Dock 第二格是对话窗，走 Claude Agent SDK，支持附件——附件传的是路径，由智能体自己读盘）。目录结构、CLI 用法、配置项见 `README.md`；模块规格见 `docs/superpowers/specs/2026-09-03-skill-registry-executor-design.md`。
 
 注意：隔壁 `E:\Workspace\agentic-os` 是更早的 Electron MVP（Dashboard、Second Brain 图谱、Skills Deck），本仓库只把它当参考，不修改它。将来接 Electron 外壳时，UI 层可以从那边搬。
 
@@ -46,4 +48,8 @@ Renderer（Dashboard）→ 主进程 OS Core Services（Skill Registry & Executo
 3. ~~实现 Connector Gateway 的 MCP HTTP Server + Guardrail 中间件雏形~~ ✅ 已完成（风险三档精确到 tool、未标注即最严档、审批改为阻塞式而非文档 §2.3 的占位符轮询；BrowserAdapter 仍只有接口）
 4. ~~Memory Indexer 增量索引优化，解决"Index hit its file cap"的规模问题~~ ✅ 已完成（取消文件上限、流式 walk + 批量写入；5 万文件实测重扫 3.2s、最大卡顿 98ms；FTS5 用 trigram 因为 unicode61 匹配不了中文；暂未上 worker_thread，理由见 README 技术债）
 5. ~~"我的 Skill"管理界面~~ ✅ 已完成：Skill 体检（架构规范 §11 清单机器化 + Gateway §4 两张皮校验）、模板新建、面板健康标记
-6. 待补：**Skill 市场**（从远程仓库拉取 skill 包）。设计文档里只有框图上的一个词，包格式 / 来源信任 / 版本升级都需要先设计再动手
+6. ~~Routine 支持"工具目标" + `tool_calls` 保留策略 + IMAP Email connector~~ ✅ 已完成
+   - Routine 可指向 Gateway tool 而非只有 Skill，这是"声明式桌面控件"的机制：取数据走 connector（便宜、确定、凭据安全），判断才走 Skill。不可逆 tool 在创建时与每次触发前**两层**拒绝——manifest 是用户会改的文件
+   - 审计表按"事后回溯价值"分档保留（写操作与被拦下的 90 天，成功的只读 7 天），`gateway compact` 单独回收磁盘（删行不会让 SQLite 文件变小）
+   - Email 走 MCP stdio connector 而非 CLI（连接可复用）；顺带补上了此前完全缺失的凭据写入路径
+7. 待补：**Skill 市场**（从远程仓库拉取 skill 包）。设计文档里只有框图上的一个词，包格式 / 来源信任 / 版本升级都需要先设计再动手

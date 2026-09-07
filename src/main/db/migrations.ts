@@ -184,6 +184,81 @@ const MIGRATIONS: Array<(db: Database) => void> = [
         VALUES (new.id, new.name, new.title, new.area, new.excerpt);
       END;
     `)
+  },
+
+  function v5(db) {
+    db.exec(`
+      -- A routine can now target a Gateway tool as well as a Skill. The table
+      -- is rebuilt rather than altered because skill_id was NOT NULL and SQLite
+      -- cannot relax that in place.
+      CREATE TABLE routines_next (
+        id                 TEXT PRIMARY KEY,
+        name               TEXT NOT NULL,
+        target_kind        TEXT NOT NULL DEFAULT 'skill',
+        skill_id           TEXT,
+        tool_name          TEXT,
+        tool_args          TEXT,
+        cron               TEXT NOT NULL,
+        timezone           TEXT,
+        args               TEXT,
+        agent              TEXT,
+        model              TEXT,
+        effort             TEXT,
+        enabled            INTEGER NOT NULL DEFAULT 1,
+        missed_run_policy  TEXT NOT NULL DEFAULT 'skip',
+        max_retries        INTEGER NOT NULL DEFAULT 0,
+        retry_delay_ms     INTEGER NOT NULL DEFAULT 60000,
+        next_run_at        TEXT,
+        last_run_at        TEXT,
+        last_status        TEXT,
+        last_run_id        TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+      );
+
+      INSERT INTO routines_next
+        (id, name, target_kind, skill_id, tool_name, tool_args, cron, timezone, args,
+         agent, model, effort, enabled, missed_run_policy, max_retries, retry_delay_ms,
+         next_run_at, last_run_at, last_status, last_run_id, created_at, updated_at)
+      SELECT
+         id, name, 'skill', skill_id, NULL, NULL, cron, timezone, args,
+         agent, model, effort, enabled, missed_run_policy, max_retries, retry_delay_ms,
+         next_run_at, last_run_at, last_status, last_run_id, created_at, updated_at
+        FROM routines;
+
+      DROP TABLE routines;
+      ALTER TABLE routines_next RENAME TO routines;
+      CREATE INDEX idx_routines_due ON routines (enabled, next_run_at);
+
+      -- The latest value produced by each routine, for widgets to read.
+      --
+      -- Deliberately separate from tool_calls: that table is an audit trail of
+      -- what happened and is subject to a retention policy, so a widget reading
+      -- from it would lose its data the moment pruning ran. This holds one row
+      -- per routine, upserted, so it never grows.
+      CREATE TABLE routine_results (
+        routine_id  TEXT PRIMARY KEY REFERENCES routines(id) ON DELETE CASCADE,
+        status      TEXT NOT NULL,
+        result      TEXT,
+        error       TEXT,
+        updated_at  TEXT NOT NULL
+      );
+    `)
+  },
+
+  function v6(db) {
+    db.exec(`
+      -- Settings the user changes from the UI.
+      --
+      -- Machine-local and absolute-path shaped, so SQLite rather than a file in
+      -- the workspace: these are not something to put under version control or
+      -- sync between machines.
+      CREATE TABLE settings (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `)
   }
 ]
 

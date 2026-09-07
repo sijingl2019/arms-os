@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MemorySearchHit } from '@shared/types'
+import { useShell } from '../i18n/useI18n'
 import { Icon } from './icons'
 
 const DEBOUNCE_MS = 200
@@ -12,7 +13,7 @@ export interface SearchOverlayProps {
 }
 
 /**
- * Knowledge-base search, floating over the dimmed brain.
+ * Knowledge-base search, floating over the dimmed core.
  *
  * Deliberately thin: it searches, it opens a file, and that is all. Anything
  * more (filters, index maintenance, the router files) belongs in the Memory
@@ -22,6 +23,7 @@ export function SearchOverlay({
   onClose,
   onOpenMemoryPanel
 }: SearchOverlayProps): React.JSX.Element {
+  const { t } = useShell()
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<MemorySearchHit[]>([])
   const [searching, setSearching] = useState(false)
@@ -93,28 +95,33 @@ export function SearchOverlay({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="search-box" role="search">
+      <div className="search-box glass" role="search">
         <div className="search-field">
-          <Icon name="search" size={18} />
+          <Icon name="search" size={16} />
           <input
             ref={inputRef}
             value={query}
-            placeholder="搜索知识库…"
-            aria-label="搜索知识库"
+            placeholder={t('search.placeholder')}
+            aria-label={t('search.label')}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button type="button" className="ghost" onClick={onClose} aria-label="关闭搜索">
-            <Icon name="close" size={16} />
+          <button
+            type="button"
+            className="btn btn-glyph"
+            onClick={onClose}
+            aria-label={t('common.close')}
+          >
+            <Icon name="close" size={13} />
           </button>
         </div>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p className="warn-line">{error}</p>}
 
         {indexedFiles === 0 && (
           <p className="search-note">
-            知识库还没有索引任何文件。
+            {t('search.notIndexed')}{' '}
             <button type="button" className="linkish" onClick={onOpenMemoryPanel}>
-              去 Memory 面板做一次 refresh
+              {t('search.goMemory')}
             </button>
           </p>
         )}
@@ -125,12 +132,14 @@ export function SearchOverlay({
               <li key={hit.path}>
                 <button type="button" onClick={() => open(hit)}>
                   <span className="hit-title">{hit.title || hit.name}</span>
-                  <span className="hit-path">{hit.relPath}</span>
+                  <span className="hit-path mono">{hit.relPath}</span>
                   {hit.snippet && <span className="hit-snippet">{hit.snippet}</span>}
                 </button>
               </li>
             ))}
-            {hits.length === 0 && !searching && <li className="search-note">没有匹配的内容</li>}
+            {hits.length === 0 && !searching && (
+              <li className="search-note">{t('search.empty')}</li>
+            )}
           </ul>
         )}
       </div>

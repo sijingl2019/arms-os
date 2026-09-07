@@ -24,6 +24,13 @@ export type IconName =
   | 'maximize'
   | 'restore'
   | 'close'
+  | 'sun'
+  | 'moon'
+  | 'language'
+  | 'trash'
+  | 'send'
+  | 'stop'
+  | 'paperclip'
 
 const PATHS: Record<IconName, readonly string[]> = {
   home: ['M3 11l9-8 9 8', 'M5 10v10h14V10'],
@@ -52,7 +59,29 @@ const PATHS: Record<IconName, readonly string[]> = {
   minimize: ['M5 12h14'],
   maximize: ['M5 5h14v14H5z'],
   restore: ['M8 8h11v11H8z', 'M5 16V5h11'],
-  close: ['M6 6l12 12', 'M18 6L6 18']
+  close: ['M6 6l12 12', 'M18 6L6 18'],
+  sun: [
+    'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+    'M12 2v2',
+    'M12 20v2',
+    'M2 12h2',
+    'M20 12h2',
+    'M4.9 4.9l1.4 1.4',
+    'M17.7 17.7l1.4 1.4',
+    'M19.1 4.9l-1.4 1.4',
+    'M6.3 17.7l-1.4 1.4'
+  ],
+  moon: ['M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z'],
+  trash: ['M4 7h16', 'M9.5 7V4.8h5V7', 'M6.5 7l1 12.5h9L17.5 7', 'M10.5 10.5v6', 'M13.5 10.5v6'],
+  send: ['M4.5 12L20 4.5 12.5 20l-2-6z', 'M10.5 14l9.5-9.5'],
+  stop: ['M7 7h10v10H7z'],
+  paperclip: ['M20 11.5l-8.2 8.2a4.6 4.6 0 0 1-6.5-6.5l8.6-8.6a3.1 3.1 0 0 1 4.4 4.4l-8.6 8.6a1.6 1.6 0 0 1-2.2-2.2l7.9-7.9'],
+  language: [
+    'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
+    'M3.6 9h16.8',
+    'M3.6 15h16.8',
+    'M12 3c2.4 2.4 3.6 5.4 3.6 9s-1.2 6.6-3.6 9c-2.4-2.4-3.6-5.4-3.6-9s1.2-6.6 3.6-9z'
+  ]
 }
 
 export interface IconProps {

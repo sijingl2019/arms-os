@@ -118,6 +118,13 @@ export interface RunHistoryQuery {
 export interface ArmsEvents {
   'routine:fired': RoutineFired
   'routine:skipped': { routineId: string; reason: RoutineSkipReason; at: string }
+  /** A tool-target routine finished; the skill path reports via skill:run:completed. */
+  'routine:tool:completed': {
+    routineId: string
+    status: RunStatus
+    result: string | null
+    error: string | null
+  }
   'routines:updated': { routineId: string | null }
   'skill:run:started': { runId: string; skillId: string | null }
   'skill:run:chunk': { runId: string; stream: 'stdout' | 'stderr'; chunk: string }
@@ -151,29 +158,78 @@ export type RoutineSkipReason =
   | 'missed-while-offline'
   | 'previous-run-still-active'
   | 'unknown-skill'
+  | 'unknown-tool'
+  /**
+   * The tool was safe enough to schedule when the routine was created, but the
+   * manifest has since raised it to write-irreversible. Checked again at fire
+   * time rather than trusted from creation, because the manifest is a file the
+   * user edits underneath us.
+   */
+  | 'tool-risk-raised'
 
 export type RoutineLastStatus = RunStatus | 'skipped'
 
+/**
+ * What a routine fires.
+ *
+ * A discriminated union rather than optional fields, so a tool routine cannot
+ * carry a model hint and a skill routine cannot carry tool arguments - both
+ * would be meaningless, and the type system is a better place to say so than a
+ * comment.
+ */
+export type RoutineTarget =
+  | {
+      kind: 'skill'
+      skillId: string
+      /** Appended to the prompt. */
+      args: string | null
+      agent: AgentId | null
+      model: string | null
+      effort: string | null
+    }
+  | {
+      kind: 'tool'
+      /** `<connector>.<tool>`, as the Gateway exposes it. */
+      toolName: string
+      toolArgs: Record<string, unknown>
+    }
+
+export type RoutineTargetInput =
+  | {
+      kind: 'skill'
+      skillId: string
+      args?: string | null
+      agent?: AgentId | null
+      model?: string | null
+      effort?: string | null
+    }
+  | { kind: 'tool'; toolName: string; toolArgs?: Record<string, unknown> }
+
 export interface RoutineFired {
   routineId: string
-  skillId: string
-  args?: string
+  target: RoutineTarget
   /** 1 for the scheduled firing; higher for automatic retries. */
   attempt: number
+}
+
+/** The latest value a routine produced, for a widget to render. */
+export interface RoutineResult {
+  routineId: string
+  status: RoutineLastStatus
+  /** Tool output as text, or null when the run failed. */
+  result: string | null
+  error: string | null
+  updatedAt: string
 }
 
 export interface RoutineDef {
   id: string
   name: string
-  skillId: string
+  target: RoutineTarget
   /** croner expression. Validated on write, so a bad one never reaches the loop. */
   cron: string
   /** IANA zone; null means the host's local time. */
   timezone: string | null
-  args: string | null
-  agent: AgentId | null
-  model: string | null
-  effort: string | null
   enabled: boolean
   missedRunPolicy: MissedRunPolicy
   /** 0 disables retries. 架构规范 §6.2 requires this to be explicit. */
@@ -189,13 +245,9 @@ export interface RoutineDef {
 
 export interface RoutineInput {
   name: string
-  skillId: string
+  target: RoutineTargetInput
   cron: string
   timezone?: string | null
-  args?: string | null
-  agent?: AgentId | null
-  model?: string | null
-  effort?: string | null
   enabled?: boolean
   missedRunPolicy?: MissedRunPolicy
   maxRetries?: number
@@ -260,6 +312,8 @@ export interface ArmsOsBridge {
     update(id: string, patch: Partial<RoutineInput>): Promise<RoutineDef>
     remove(id: string): Promise<boolean>
     exportSystemTask(id: string): Promise<SystemTaskExport>
+    /** The latest value a tool routine produced, for a widget to render. */
+    result(id: string): Promise<RoutineResult | null>
   }
   system: {
     status(): Promise<SystemStatus>
@@ -268,6 +322,10 @@ export interface ArmsOsBridge {
     status(): Promise<GatewayStatus>
     reload(): Promise<string[]>
     toolCalls(limit?: number): Promise<ToolCallRecord[]>
+    /** Apply the audit retention policy now. */
+    prune(): Promise<{ aged: number; noise: number; total: number }>
+    /** VACUUM: hand the space pruned rows freed back to the filesystem. */
+    compact(): Promise<{ before: number; after: number }>
   }
   memory: {
     search(query: MemorySearchQuery): Promise<MemorySearchHit[]>
@@ -277,10 +335,23 @@ export interface ArmsOsBridge {
     writeRouter(dryRun?: boolean): Promise<string[]>
     /** Hand an indexed file to the OS default app. Rejects paths outside the roots. */
     open(path: string): Promise<OpenResult>
+    /** Native folder picker. Resolves to null when the user cancels. */
+    chooseRoot(): Promise<string | null>
+    /** Replace the root list; returns the stored list and rows pruned. */
+    setRoots(roots: string[]): Promise<{ roots: string[]; pruned: number }>
   }
   agents: {
     /** Probe each agent CLI for availability. Runs `--version`, so it is slow-ish. */
     list(): Promise<AgentInfo[]>
+  }
+  /** The desktop's conversation with the agent, with no skill in front of it. */
+  chat: {
+    history(): Promise<ChatMessage[]>
+    send(text: string, attachments?: ChatAttachment[]): Promise<ChatSendResult>
+    /** Opens the OS file picker; returns what the user chose. */
+    pickFiles(): Promise<ChatAttachment[]>
+    cancel(): Promise<boolean>
+    clear(): Promise<void>
   }
   /** Read-only view of the workspace repository, for the desktop's Git widget. */
   git: {
@@ -293,6 +364,15 @@ export interface ArmsOsBridge {
     maximize(): Promise<boolean>
     /** Hides to the tray - quitting stays a tray-menu-only action. */
     close(): Promise<void>
+  }
+  /**
+   * Credential storage. Values only ever travel renderer -> main; nothing here
+   * returns a secret.
+   */
+  vault: {
+    list(): Promise<string[]>
+    set(id: string, secret: string): Promise<void>
+    remove(id: string): Promise<void>
   }
   /** The approval queue behind every write-irreversible action (§2.3). */
   confirmations: {
@@ -317,8 +397,42 @@ export interface ArmsOsBridge {
     memoryCompleted(cb: (e: MemoryIndexResult) => void): () => void
     /** Fires for system gestures (double-click, Win+Up, snap) too, not just our button. */
     windowMaximized(cb: (maximized: boolean) => void): () => void
+    chatChunk(cb: (e: { messageId: string; chunk: string }) => void): () => void
+    chatCompleted(cb: (message: ChatMessage) => void): () => void
   }
 }
+
+/* ------------------------------------------------------------------ chat */
+
+export type ChatRole = 'user' | 'agent'
+
+/** `streaming` is an agent reply still being written into. */
+export type ChatStatus = 'streaming' | 'done' | 'failed' | 'cancelled'
+
+/** A file the user attached. The agent reads it from disk with its own tools. */
+export interface ChatAttachment {
+  /** Absolute path, which is what actually reaches the agent. */
+  path: string
+  name: string
+  size: number
+}
+
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  text: string
+  at: string
+  status: ChatStatus
+  attachments?: ChatAttachment[]
+}
+
+/**
+ * Refused rather than thrown: an empty box or a second message while the agent
+ * is still answering is ordinary, and the chat window shows the reason inline.
+ */
+export type ChatSendResult =
+  | { ok: true; asked: ChatMessage; reply: ChatMessage }
+  | { ok: false; reason: string }
 
 /* ---------------------------------------------------------------- agents */
 
@@ -441,6 +555,17 @@ export interface GatewayStatus {
   issues: string[]
   vault: { kind: string; available: boolean }
   pendingConfirmations: number
+  /** Audit-trail retention windows, so the panel can say what it keeps. */
+  retention: { keepDays: number; keepReadOnlyDays: number }
+  /** Rows currently in the audit table. */
+  toolCallCount: number
+  /**
+   * Which credentials the manifest asks for and whether each is stored.
+   *
+   * Presence only - a secret never travels back to the renderer, so the panel
+   * can show "set" or "missing" but can never display or leak the value.
+   */
+  credentials: Array<{ id: string; connectorIds: string[]; present: boolean }>
 }
 
 /* ---------------------------------------------------------------- memory */

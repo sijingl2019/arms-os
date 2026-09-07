@@ -48,7 +48,12 @@ describe('core wiring', () => {
   it('carries a due routine all the way to a run record', async () => {
     await core.registry.refresh()
     const routine = core.routines.create(
-      { name: 'digest', skillId: 'news-digest', cron: '0 9 * * *', timezone: 'UTC' },
+      {
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '0 9 * * *',
+        timezone: 'UTC'
+      },
       new Date('2026-09-04T08:00:00Z')
     )
 
@@ -69,7 +74,12 @@ describe('core wiring', () => {
   it('reports the run outcome back onto the routine', async () => {
     await core.registry.refresh()
     const routine = core.routines.create(
-      { name: 'digest', skillId: 'news-digest', cron: '0 9 * * *', timezone: 'UTC' },
+      {
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '0 9 * * *',
+        timezone: 'UTC'
+      },
       new Date('2026-09-04T08:00:00Z')
     )
     core.startScheduler(new Date('2026-09-04T08:00:00Z'))
@@ -84,12 +94,34 @@ describe('core wiring', () => {
     )
   })
 
-  it('refuses to fire a routine whose skill is not indexed', async () => {
+  it('refuses to save a routine pointing at a skill that is not indexed', async () => {
     // Registry deliberately not refreshed, so the skill is unknown.
+    expect(() =>
+      core.routines.create({
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '0 9 * * *',
+        timezone: 'UTC'
+      })
+    ).toThrow(/未知 Skill/)
+  })
+
+  it('stops firing once an indexed skill disappears', async () => {
+    // The case creation-time validation cannot catch: the skill was there when
+    // the routine was saved and was deleted afterwards.
+    await core.registry.refresh()
     core.routines.create(
-      { name: 'digest', skillId: 'news-digest', cron: '0 9 * * *', timezone: 'UTC' },
+      {
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '0 9 * * *',
+        timezone: 'UTC'
+      },
       new Date('2026-09-04T08:00:00Z')
     )
+
+    rmSync(path.join(dir, '.claude', 'skills', 'news-digest'), { recursive: true, force: true })
+    await core.registry.refresh()
 
     const result = core.scheduler.tick(new Date('2026-09-04T09:00:01Z'))
     await new Promise((resolve) => setImmediate(resolve))
@@ -101,7 +133,12 @@ describe('core wiring', () => {
   it('does not tick until the scheduler is explicitly started', async () => {
     await core.registry.refresh()
     core.routines.create(
-      { name: 'digest', skillId: 'news-digest', cron: '* * * * *', timezone: 'UTC' },
+      {
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '* * * * *',
+        timezone: 'UTC'
+      },
       new Date('2026-09-04T08:00:00Z')
     )
 
@@ -114,7 +151,12 @@ describe('core wiring', () => {
   it('reconciles missed triggers when the scheduler finally starts', async () => {
     await core.registry.refresh()
     core.routines.create(
-      { name: 'digest', skillId: 'news-digest', cron: '0 9 * * *', timezone: 'UTC' },
+      {
+        name: 'digest',
+        target: { kind: 'skill', skillId: 'news-digest' },
+        cron: '0 9 * * *',
+        timezone: 'UTC'
+      },
       new Date('2026-09-04T08:00:00Z')
     )
 

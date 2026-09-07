@@ -57,9 +57,11 @@ export function createField(orbits: readonly Orbit[], perOrbit: number, seed = 0
         orbit,
         angle: random() * TAU,
         speed: direction * (0.12 + random() * 0.34),
-        size: 0.4 + random() * 1.1,
-        alpha: 0.2 + random() * 0.55,
-        trail: 0.05 + random() * 0.16
+        size: 0.35 + random() * 0.95,
+        alpha: 0.18 + random() * 0.45,
+        // Longer than it looks: the trail is what turns a row of dots into a
+        // stream, and short ones are exactly what reads as beads on a string.
+        trail: 0.09 + random() * 0.24
       })
     }
   }

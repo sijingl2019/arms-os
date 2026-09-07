@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { PANELS, type PanelId } from '../routes'
+import { useShell } from '../i18n/useI18n'
+import type { MessageKey } from '../i18n/messages'
+import type { PanelId } from '../routes'
 import { Icon } from './icons'
 
 /**
@@ -10,6 +12,9 @@ import { Icon } from './icons'
 interface BoundaryProps {
   /** Remount the subtree when the route changes, clearing a previous crash. */
   resetKey: string
+  /** Passed in rather than read from context: a class component has no hooks. */
+  message(error: Error): string
+  hint: string
   children: ReactNode
 }
 
@@ -38,8 +43,8 @@ class PanelBoundary extends Component<BoundaryProps, BoundaryState> {
     if (this.state.error) {
       return (
         <div className="empty">
-          <p className="error">这个面板渲染失败：{this.state.error.message}</p>
-          <p>其余部分仍可使用，按 Esc 返回桌面。</p>
+          <p className="error">{this.props.message(this.state.error)}</p>
+          <p>{this.props.hint}</p>
         </div>
       )
     }
@@ -54,21 +59,28 @@ export interface OverlayHostProps {
 }
 
 export function OverlayHost({ panel, onClose, children }: OverlayHostProps): React.JSX.Element {
-  const label = PANELS.find((p) => p.id === panel)?.label ?? panel
+  const { t } = useShell()
+  const label = t(`panel.${panel}` as MessageKey)
 
   return (
     <div className="overlay" role="dialog" aria-label={label}>
       <header className="overlay-bar">
         <button type="button" className="ghost" onClick={onClose}>
           <Icon name="home" size={16} />
-          返回桌面
+          {t('overlay.back')}
         </button>
         <h2>{label}</h2>
         <span className="spacer" />
-        <span className="status-line">Esc 返回</span>
+        <span className="status-line">{t('overlay.esc')}</span>
       </header>
       <div className="overlay-body">
-        <PanelBoundary resetKey={panel}>{children}</PanelBoundary>
+        <PanelBoundary
+          resetKey={panel}
+          message={(error) => t('overlay.crashed', { message: error.message })}
+          hint={t('overlay.crashedHint')}
+        >
+          {children}
+        </PanelBoundary>
       </div>
     </div>
   )
