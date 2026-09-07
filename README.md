@@ -220,6 +220,8 @@ codex  mcp add arms-gateway --url http://127.0.0.1:39217/mcp
 | `write-reversible` | 放行，审计里高亮 |
 | `write-irreversible` | **阻塞**，直到你在 Dashboard 点批准 |
 
+Gateway 面板上的「添加 connector」可以直接写进这个 manifest（邮箱 IMAP / MCP stdio / MCP HTTP 三个预设），密码之类的机密同时存进 keychain；连接器列表每行的「移除」把对应条目从 YAML 里删掉，凭据留着不动。写入前会先跑一遍 manifest 校验，非法条目落不了盘；文件里的注释保留，随时还能手工改。
+
 **没写 `default_risk` 就是最严档。** 这是故意的：connector 作者只能主动往下调，不能因为忘了标注而意外放行。同理，看不懂的风险标签也一律按最严处理。
 
 **审批是阻塞式的**：`tools/call` 一直挂着直到你批准/拒绝或超时（默认 5 分钟），然后返回真实结果。设计文档 §2.3 原本写的是立刻返回占位符让 agent 轮询——实践中 agent 会把占位符当成功继续往下跑，所以改成阻塞。有审批待处理时托盘 tooltip 会提示，窗口会自动弹出。

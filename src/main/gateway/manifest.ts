@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
-import { parse as parseYaml } from 'yaml'
+import path from 'node:path'
+import { isMap, isSeq, parseDocument, parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import {
   RISK_LEVELS,
   STRICTEST_RISK,
@@ -264,4 +265,49 @@ export function riskFor(entry: ConnectorManifestEntry, toolName: string): RiskLe
   const declared = entry.tools.find((t) => t.name === toolName)?.risk
   if (declared) return declared
   return entry.defaultRisk
+}
+
+/**
+ * Append one connector to the manifest file.
+ *
+ * Text append rather than re-serialising the document, because the manifest is
+ * a hand-edited file full of comments and nobody wants the UI to eat them.
+ */
+export async function appendManifestEntry(
+  file: string,
+  entry: Record<string, unknown>
+): Promise<void> {
+  const existing = await fs.readFile(file, 'utf8').catch(() => '')
+  const doc: unknown = existing.trim() ? parseYaml(existing) : null
+  if (doc !== null && doc !== undefined && !Array.isArray(doc)) {
+    // The `{ connectors: [...] }` form is accepted on read but appending a
+    // list item to it would produce invalid YAML. Say so instead.
+    throw new Error(`${file} 不是连接器列表格式，请手工编辑`)
+  }
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  const head = existing.trim() ? `${existing.replace(/\s*$/, '')}\n\n` : ''
+  await fs.writeFile(file, head + stringifyYaml([entry]), 'utf8')
+}
+
+/** Drop one connector by id. Returns false when it was not in the file. */
+export async function removeManifestEntry(file: string, id: string): Promise<boolean> {
+  const text = await fs.readFile(file, 'utf8').catch(() => '')
+  if (!text.trim()) return false
+  const doc = parseDocument(text)
+  const seq = doc.contents
+  if (!isSeq(seq)) throw new Error(`${file} 不是连接器列表格式，请手工编辑`)
+  const index = seq.items.findIndex(
+    (item) => isMap(item) && (item.toJSON() as { id?: string } | null)?.id === id
+  )
+  if (index < 0) return false
+  const [removed] = seq.items.splice(index, 1)
+  // A comment above the first item is the file's header, not the entry's, so
+  // deleting that entry must not take the header with it.
+  if (index === 0 && removed?.commentBefore) {
+    const head = seq.items[0]
+    if (head) head.commentBefore = removed.commentBefore + (head.commentBefore ?? '')
+    else doc.commentBefore = removed.commentBefore
+  }
+  await fs.writeFile(file, doc.toString(), 'utf8')
+  return true
 }

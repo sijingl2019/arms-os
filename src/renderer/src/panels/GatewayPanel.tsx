@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { GatewayStatus, PendingConfirmation, ToolCallRecord } from '@shared/types'
+import { CONNECTOR_PRESETS, RISK_OPTIONS } from './connectorPresets'
 
 const RISK_LABEL: Record<string, string> = {
   'read-only': 'read-only',
@@ -28,6 +29,9 @@ export function GatewayPanel(): React.JSX.Element {
   /** Which credential row has its input open, and what has been typed. */
   const [editing, setEditing] = useState<string | null>(null)
   const [secret, setSecret] = useState('')
+  /** The add-connector form: which preset, and the answers so far. */
+  const [presetKey, setPresetKey] = useState<string | null>(null)
+  const [form, setForm] = useState<Record<string, string>>({})
 
   const load = useCallback(() => {
     void window.arms.gateway.status().then(setStatus)
@@ -118,6 +122,48 @@ export function GatewayPanel(): React.JSX.Element {
     }
   }
 
+  function openPreset(key: string | null): void {
+    setPresetKey(key)
+    const preset = CONNECTOR_PRESETS.find((p) => p.key === key)
+    setForm(Object.fromEntries((preset?.fields ?? []).map((f) => [f.key, f.value ?? ''])))
+  }
+
+  async function addConnector(): Promise<void> {
+    const preset = CONNECTOR_PRESETS.find((p) => p.key === presetKey)
+    if (!preset) return
+    setBusy(true)
+    setError(null)
+    try {
+      const { entry, credentialId } = preset.build(form)
+      const issues = await window.arms.gateway.addConnector(entry)
+      // The secret goes in after the entry, so a rejected entry never leaves a
+      // stray credential behind in the keychain.
+      const value = preset.fields.find((f) => f.secret)?.key
+      if (credentialId && value && form[value]) {
+        await window.arms.vault.set(credentialId, form[value])
+        await window.arms.gateway.reload()
+      }
+      setNotice(issues.length > 0 ? issues.join(' · ') : `已添加 ${String(entry.id)}`)
+      openPreset(null)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeConnector(id: string): Promise<void> {
+    setError(null)
+    try {
+      await window.arms.gateway.removeConnector(id)
+      setNotice(`已移除 ${id}`)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
   async function reload(): Promise<void> {
     setBusy(true)
     setError(null)
@@ -158,9 +204,15 @@ export function GatewayPanel(): React.JSX.Element {
           <dd>
             {status && status.connectors.length > 0
               ? status.connectors.map((c) => (
-                  <div key={c.id}>
-                    {c.id} · {c.transport} · {c.toolCount} tools
-                    {c.error ? ` · ${c.error}` : ''}
+                  <div className="row" key={c.id}>
+                    <span>
+                      {c.id} · {c.transport} · {c.toolCount} tools
+                      {c.error ? ` · ${c.error}` : ''}
+                    </span>
+                    <span className="spacer" />
+                    <button className="danger" onClick={() => void removeConnector(c.id)}>
+                      移除
+                    </button>
                   </div>
                 ))
               : 'none configured'}
@@ -169,6 +221,67 @@ export function GatewayPanel(): React.JSX.Element {
         {status && status.issues.length > 0 && (
           <p className="error">{status.issues.join(' · ')}</p>
         )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row">
+          <h3 style={{ margin: 0 }}>添加 connector</h3>
+          <span className="status-line">写进 manifest.yaml，随时可以手工再改</span>
+          <span className="spacer" />
+          {CONNECTOR_PRESETS.map((preset) => (
+            <button
+              key={preset.key}
+              className={presetKey === preset.key ? 'primary' : ''}
+              onClick={() => openPreset(presetKey === preset.key ? null : preset.key)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        {CONNECTOR_PRESETS.filter((p) => p.key === presetKey).map((preset) => (
+          <div key={preset.key} style={{ marginTop: 10 }}>
+            {preset.hint && (
+              <p className="status-line" style={{ marginBottom: 10 }}>
+                {preset.hint}
+              </p>
+            )}
+            {preset.fields.map((field) => (
+              <div className="row" key={field.key} style={{ marginBottom: 8 }}>
+                <span style={{ minWidth: 160 }}>{field.label}</span>
+                {field.key === 'default_risk' ? (
+                  <select
+                    value={form[field.key] ?? ''}
+                    onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                  >
+                    {RISK_OPTIONS.map((risk) => (
+                      <option key={risk} value={risk}>
+                        {risk}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.secret ? 'password' : 'text'}
+                    value={form[field.key] ?? ''}
+                    placeholder={field.placeholder ?? ''}
+                    onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                    style={{ minWidth: 260 }}
+                  />
+                )}
+              </div>
+            ))}
+            <div className="row">
+              <button
+                className="primary"
+                disabled={busy || preset.fields.some((f) => !f.optional && !form[f.key])}
+                onClick={() => void addConnector()}
+              >
+                添加
+              </button>
+              <button onClick={() => openPreset(null)}>取消</button>
+            </div>
+          </div>
+        ))}
       </div>
 
       {status && status.credentials.length > 0 && (

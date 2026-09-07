@@ -65,13 +65,11 @@ export function OverlayHost({ panel, onClose, children }: OverlayHostProps): Rea
   return (
     <div className="overlay" role="dialog" aria-label={label}>
       <header className="overlay-bar">
-        <button type="button" className="ghost" onClick={onClose}>
-          <Icon name="home" size={16} />
-          {t('overlay.back')}
-        </button>
         <h2>{label}</h2>
         <span className="spacer" />
-        <span className="status-line">{t('overlay.esc')}</span>
+        <button type="button" className="ghost overlay-close" onClick={onClose} aria-label={t('overlay.back')}>
+          <Icon name="close" size={16} />
+        </button>
       </header>
       <div className="overlay-body">
         <PanelBoundary

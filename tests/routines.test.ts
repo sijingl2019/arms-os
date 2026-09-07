@@ -260,6 +260,40 @@ describe('RoutineScheduler', () => {
 
     expect(scheduler.pendingRetries()).toBe(0)
   })
+
+  it('runNow fires a routine that is not yet due, without touching its schedule', () => {
+    const routine = make()
+    const nextRunBefore = store.get(routine.id)?.nextRunAt
+
+    scheduler.runNow(routine.id, AT('2026-09-04T08:30:00Z'))
+
+    expect(fired).toHaveLength(1)
+    expect(fired[0]).toMatchObject({ routineId: routine.id, attempt: 1 })
+    expect(store.get(routine.id)?.nextRunAt).toBe(nextRunBefore)
+  })
+
+  it('runNow still refuses a target the guardrail rejects', () => {
+    const routine = make({ target: { kind: 'skill', skillId: 'deleted-skill' } })
+
+    expect(() => scheduler.runNow(routine.id, AT('2026-09-04T08:30:00Z'))).toThrow('unknown-skill')
+    expect(fired).toHaveLength(0)
+    expect(store.get(routine.id)?.lastStatus).toBe('skipped')
+  })
+
+  it('runNow refuses to double-run a routine still in flight', () => {
+    const routine = make({ cron: '*/5 * * * *' })
+    scheduler.tick(AT('2026-09-04T09:00:01Z'))
+    expect(fired).toHaveLength(1)
+
+    expect(() => scheduler.runNow(routine.id, AT('2026-09-04T09:01:00Z'))).toThrow(
+      'previous run still active'
+    )
+    expect(fired).toHaveLength(1)
+  })
+
+  it('runNow rejects an unknown routine id', () => {
+    expect(() => scheduler.runNow('no-such-routine')).toThrow('unknown routine')
+  })
 })
 
 describe('RoutineScheduler startup reconciliation', () => {

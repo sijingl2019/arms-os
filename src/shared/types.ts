@@ -314,6 +314,8 @@ export interface ArmsOsBridge {
     exportSystemTask(id: string): Promise<SystemTaskExport>
     /** The latest value a tool routine produced, for a widget to render. */
     result(id: string): Promise<RoutineResult | null>
+    /** Fire a routine immediately, bypassing its cron schedule. */
+    runNow(id: string): Promise<void>
   }
   system: {
     status(): Promise<SystemStatus>
@@ -322,6 +324,9 @@ export interface ArmsOsBridge {
     status(): Promise<GatewayStatus>
     reload(): Promise<string[]>
     toolCalls(limit?: number): Promise<ToolCallRecord[]>
+    /** Append a connector to the manifest and reload; returns manifest issues. */
+    addConnector(entry: Record<string, unknown>): Promise<string[]>
+    removeConnector(id: string): Promise<string[]>
     /** Apply the audit retention policy now. */
     prune(): Promise<{ aged: number; noise: number; total: number }>
     /** VACUUM: hand the space pruned rows freed back to the filesystem. */

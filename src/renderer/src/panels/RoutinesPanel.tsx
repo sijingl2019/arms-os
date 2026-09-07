@@ -40,6 +40,24 @@ function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString() : '—'
 }
 
+/** Load a routine's current values back into the create form's shape, for editing. */
+function toDraft(r: RoutineDef): typeof BLANK {
+  return {
+    name: r.name,
+    targetKind: r.target.kind,
+    skillId: r.target.kind === 'skill' ? r.target.skillId : '',
+    toolName: r.target.kind === 'tool' ? r.target.toolName : '',
+    cron: r.cron,
+    timezone: r.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    args:
+      r.target.kind === 'tool'
+        ? JSON.stringify(r.target.toolArgs ?? {})
+        : r.target.args ?? '',
+    missedRunPolicy: r.missedRunPolicy,
+    maxRetries: r.maxRetries
+  }
+}
+
 /**
  * Routine management. The "仅在本应用运行时触发" caveat from the old MVP is
  * gone: the scheduler now lives in a tray-resident main process, and Export
@@ -50,8 +68,10 @@ export function RoutinesPanel(): React.JSX.Element {
   const [skills, setSkills] = useState<SkillMeta[]>([])
   const [tools, setTools] = useState<GatewayToolInfo[]>([])
   const [draft, setDraft] = useState({ ...BLANK })
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exported, setExported] = useState<string | null>(null)
+  const [runningId, setRunningId] = useState<string | null>(null)
 
   const load = useCallback(() => {
     void window.arms.routines.list().then(setRoutines)
@@ -68,7 +88,7 @@ export function RoutinesPanel(): React.JSX.Element {
     return window.arms.on.routinesUpdated(load)
   }, [load])
 
-  async function create(): Promise<void> {
+  async function save(): Promise<void> {
     setError(null)
     try {
       const target: RoutineTargetInput =
@@ -76,18 +96,48 @@ export function RoutinesPanel(): React.JSX.Element {
           ? { kind: 'tool', toolName: draft.toolName, toolArgs: parseToolArgs(draft.args) }
           : { kind: 'skill', skillId: draft.skillId, args: draft.args || null }
 
-      await window.arms.routines.create({
+      const input = {
         name: draft.name,
         target,
         cron: draft.cron,
         timezone: draft.timezone || null,
         missedRunPolicy: draft.missedRunPolicy,
         maxRetries: Number(draft.maxRetries)
-      })
+      }
+
+      if (editingId) {
+        await window.arms.routines.update(editingId, input)
+        setEditingId(null)
+      } else {
+        await window.arms.routines.create(input)
+      }
       setDraft({ ...BLANK })
       load()
     } catch (err) {
       setError((err as Error).message)
+    }
+  }
+
+  function startEdit(r: RoutineDef): void {
+    setError(null)
+    setEditingId(r.id)
+    setDraft(toDraft(r))
+  }
+
+  function cancelEdit(): void {
+    setEditingId(null)
+    setDraft({ ...BLANK })
+  }
+
+  async function runNow(id: string): Promise<void> {
+    setError(null)
+    setRunningId(id)
+    try {
+      await window.arms.routines.runNow(id)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setRunningId(null)
     }
   }
 
@@ -226,11 +276,12 @@ export function RoutinesPanel(): React.JSX.Element {
         </div>
         <button
           className="primary"
-          onClick={() => void create()}
+          onClick={() => void save()}
           disabled={draft.targetKind === 'skill' ? !draft.skillId : !draft.toolName}
         >
-          Add routine
+          {editingId ? 'Save changes' : 'Add routine'}
         </button>
+        {editingId && <button onClick={cancelEdit}>Cancel</button>}
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -274,6 +325,10 @@ export function RoutinesPanel(): React.JSX.Element {
                 </td>
                 <td>
                   <div className="row">
+                    <button onClick={() => void runNow(r.id)} disabled={runningId === r.id}>
+                      {runningId === r.id ? 'Running…' : 'Run now'}
+                    </button>
+                    <button onClick={() => startEdit(r)}>Edit</button>
                     <button onClick={() => void exportTask(r.id)}>Export</button>
                     <button className="danger" onClick={() => void window.arms.routines.remove(r.id).then(load)}>
                       Delete

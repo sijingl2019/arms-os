@@ -132,12 +132,17 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
   })
 
   ipcMain.handle(CH.routinesResult, (_e, id: string) => core.routines.result(id) ?? null)
+  ipcMain.handle(CH.routinesRunNow, (_e, id: string) => core.scheduler.runNow(id))
 
   ipcMain.handle(CH.systemStatus, () => buildStatus(core))
 
   ipcMain.handle(CH.gatewayStatus, () => core.gatewayStatus())
   ipcMain.handle(CH.gatewayReload, () => core.gateway.reload())
   ipcMain.handle(CH.gatewayToolCalls, (_e, limit?: number) => core.gateway.recentCalls(limit))
+  ipcMain.handle(CH.gatewayAddConnector, (_e, entry: Record<string, unknown>) =>
+    core.gateway.addConnector(entry)
+  )
+  ipcMain.handle(CH.gatewayRemoveConnector, (_e, id: string) => core.gateway.removeConnector(id))
   ipcMain.handle(CH.gatewayPrune, () => {
     const { aged, noise, total } = core.gateway.prune()
     return { aged, noise, total }
@@ -292,10 +297,13 @@ export function registerIpc({ core, windows }: IpcDeps): () => void {
     CH.routinesRemove,
     CH.routinesExport,
     CH.routinesResult,
+    CH.routinesRunNow,
     CH.systemStatus,
     CH.gatewayStatus,
     CH.gatewayReload,
     CH.gatewayToolCalls,
+    CH.gatewayAddConnector,
+    CH.gatewayRemoveConnector,
     CH.gatewayPrune,
     CH.gatewayCompact,
     CH.vaultList,

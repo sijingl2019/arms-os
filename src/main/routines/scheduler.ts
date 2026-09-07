@@ -260,4 +260,30 @@ export class RoutineScheduler {
   pendingRetries(): number {
     return this.retries.length
   }
+
+  /**
+   * Fire a routine immediately, bypassing its cron schedule. Still subject to
+   * the same in-flight and target checks as a normal firing, so this cannot be
+   * used to sidestep a guardrail or double-run something already in flight.
+   */
+  runNow(routineId: string, now = this.clock()): void {
+    const routine = this.store.get(routineId)
+    if (!routine) throw new Error(`unknown routine: ${routineId}`)
+
+    if (this.inFlight.has(routineId)) {
+      this.skip(routine, 'previous-run-still-active', now)
+      this.bus.emit('routines:updated', { routineId })
+      throw new Error('previous run still active')
+    }
+
+    const problem = this.checkTarget(routine.target)
+    if (problem) {
+      this.skip(routine, problem, now)
+      this.bus.emit('routines:updated', { routineId })
+      throw new Error(problem)
+    }
+
+    this.fire(routine, now, 1)
+    this.bus.emit('routines:updated', { routineId })
+  }
 }

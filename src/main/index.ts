@@ -1,5 +1,11 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, shell, Tray } from 'electron'
+import appIconPng from '../../assets/icons/app-icon.png?asset'
+import appIconIco from '../../assets/icons/app-icon.ico?asset'
+import trayDarkPng from '../../assets/icons/tray-dark.png?asset'
+import trayLightPng from '../../assets/icons/tray-light.png?asset'
+import trayDarkIco from '../../assets/icons/tray-dark.ico?asset'
+import trayLightIco from '../../assets/icons/tray-light.ico?asset'
 import { CH } from '@shared/channels'
 import { loadConfig } from './config'
 import { createCore, type ArmsCore } from './core'
@@ -42,6 +48,7 @@ function createWindow(): BrowserWindow {
     frame: false,
     backgroundColor: '#0e1116',
     title: 'ARMS Agentic OS',
+    icon: process.platform === 'win32' ? appIconIco : appIconPng,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       // Electron security baseline (系统设计文档 §10): the renderer gets no
@@ -114,20 +121,26 @@ function showWindow(): void {
   mainWindow.focus()
 }
 
-/**
- * A 1x1 transparent image is a deliberate placeholder: Tray requires an image,
- * and shipping a real icon is a design task, not a wiring one.
- */
-function trayIcon(): Electron.NativeImage {
-  const image = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAPElEQVR42mNkoBAwjhow' +
-      'asCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaMGDDwDAAzUAAF3AWpjAAAAAElFTkSuQmCC'
-  )
-  return image.isEmpty() ? nativeImage.createEmpty() : image
+/** A bold monochrome version of the app mark stays legible at tray size. */
+function trayIcon(): Electron.NativeImage | string {
+  if (process.platform === 'darwin') {
+    const source = nativeImage.createFromPath(trayDarkPng)
+    const image = source.resize({ width: 16, height: 16 })
+    image.addRepresentation({ scaleFactor: 2, buffer: source.toPNG() })
+    image.setTemplateImage(true)
+    return image
+  }
+  // Windows can use a dark taskbar while apps use light mode (and vice versa).
+  const dark = process.platform === 'win32'
+    ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+    : nativeTheme.shouldUseDarkColors
+  if (process.platform === 'win32') return dark ? trayLightIco : trayDarkIco
+  return dark ? trayLightPng : trayDarkPng
 }
 
 function refreshTray(): void {
   if (!tray) return
+  tray.setImage(trayIcon())
   tray.setToolTip(
     pendingApprovals > 0
       ? `ARMS Agentic OS - ${pendingApprovals} action(s) awaiting approval`
@@ -177,6 +190,8 @@ function buildTray(): Tray {
 app.on('second-instance', showWindow)
 
 void app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId('com.arms.agenticos')
+  if (process.platform === 'darwin') app.dock?.setIcon(appIconPng)
   // No native menu bar: the Dock and the tray are the only chrome this app has.
   Menu.setApplicationMenu(null)
 
@@ -217,6 +232,7 @@ void app.whenReady().then(async () => {
   })
 
   tray = buildTray()
+  nativeTheme.on('updated', refreshTray)
   mainWindow = createWindow()
 
   app.on('activate', () => {
@@ -235,6 +251,7 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  nativeTheme.removeListener('updated', refreshTray)
   teardownIpc?.()
   void core?.close()
   tray?.destroy()

@@ -44,7 +44,8 @@ const bridge: ArmsOsBridge = {
       ipcRenderer.invoke(CH.routinesUpdate, id, patch),
     remove: (id: string) => ipcRenderer.invoke(CH.routinesRemove, id),
     exportSystemTask: (id: string) => ipcRenderer.invoke(CH.routinesExport, id),
-    result: (id: string) => ipcRenderer.invoke(CH.routinesResult, id)
+    result: (id: string) => ipcRenderer.invoke(CH.routinesResult, id),
+    runNow: (id: string) => ipcRenderer.invoke(CH.routinesRunNow, id)
   },
   system: {
     status: () => ipcRenderer.invoke(CH.systemStatus)
@@ -53,6 +54,9 @@ const bridge: ArmsOsBridge = {
     status: () => ipcRenderer.invoke(CH.gatewayStatus),
     reload: () => ipcRenderer.invoke(CH.gatewayReload),
     toolCalls: (limit?: number) => ipcRenderer.invoke(CH.gatewayToolCalls, limit),
+    addConnector: (entry: Record<string, unknown>) =>
+      ipcRenderer.invoke(CH.gatewayAddConnector, entry),
+    removeConnector: (id: string) => ipcRenderer.invoke(CH.gatewayRemoveConnector, id),
     prune: () => ipcRenderer.invoke(CH.gatewayPrune),
     compact: () => ipcRenderer.invoke(CH.gatewayCompact)
   },

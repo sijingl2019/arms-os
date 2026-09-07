@@ -5,6 +5,12 @@ import type { ArmsConfig } from '../config'
 import type { Db } from '../db'
 import { ConfirmationStore } from './confirmations'
 import { Dispatcher } from './dispatcher'
+import {
+  appendManifestEntry,
+  parseEntry,
+  removeManifestEntry,
+  type ManifestIssue
+} from './manifest'
 import { McpGatewayServer } from './mcpServer'
 import { ConnectorRegistry } from './registry'
 import { compact, pruneToolCalls, type PruneResult } from './retention'
@@ -180,6 +186,29 @@ export class ConnectorGateway {
     this.lastIssues = refresh.issues
     this.storedCredentials = await this.vault.list().catch(() => [])
     return refresh.issues
+  }
+
+  /**
+   * Add one connector to the manifest and make it live.
+   *
+   * Validated before it is written: a rejected entry never reaches the file,
+   * so the panel cannot leave the manifest in a state the loader will drop.
+   */
+  async addConnector(entry: Record<string, unknown>): Promise<string[]> {
+    const issues: ManifestIssue[] = []
+    const parsed = parseEntry(entry, issues)
+    if (!parsed) throw new Error(issues.map((i) => i.message).join('; ') || 'invalid connector')
+    if (this.registry.list().some((s) => s.entry.id === parsed.id)) {
+      throw new Error(`connector "${parsed.id}" already exists`)
+    }
+    await appendManifestEntry(this.config.connectorManifestPath, entry)
+    return this.reload()
+  }
+
+  /** Remove one connector from the manifest. Its credential is left alone. */
+  async removeConnector(id: string): Promise<string[]> {
+    await removeManifestEntry(this.config.connectorManifestPath, id)
+    return this.reload()
   }
 
   /**
